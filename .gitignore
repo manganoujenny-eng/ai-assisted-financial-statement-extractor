@@ -1,0 +1,23 @@
+# Virtual environment
+venv/
+.venv/
+
+# PyCharm
+.idea/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated/extracted data
+data/extracted/
+
+# Private financial documents
+data/test_documents/
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
