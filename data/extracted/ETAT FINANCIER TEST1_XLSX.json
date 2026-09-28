@@ -1,0 +1,1154 @@
+{
+  "source_file": "ETAT FINANCIER TEST1.xlsx",
+  "file_type": "XLSX",
+  "raw_text": null,
+  "line_items": {
+    "AD": {
+      "code": "AD",
+      "label": "IMMOBILISATIONS INCORPORELLES",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "3",
+        "EXERCICE AU 31/12/ N BRUT": 91152753,
+        "AMORT et DEPREC.": 91152753,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "CA": {
+      "code": "CA",
+      "label": "Capital",
+      "current_year": 150000000,
+      "prior_year": 150000013,
+      "fields": {
+        "Note": "13",
+        "EXERCICE AU 31/12/N NET": 150000000,
+        "EXERCICE AU 31/12/N-1 NET": 150000013
+      }
+    },
+    "AE": {
+      "code": "AE",
+      "label": "Frais de développement et de prospection",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "CB": {
+      "code": "CB",
+      "label": "Apporteurs capital non appelé                    (-)",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "13",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AF": {
+      "code": "AF",
+      "label": "Brevets, licences, logiciels et droits similaires",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 91152753,
+        "AMORT et DEPREC.": 91152753,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "CD": {
+      "code": "CD",
+      "label": "Primes liées au capital social",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "14",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AG": {
+      "code": "AG",
+      "label": "Fonds commercial et droit au bail",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "CE": {
+      "code": "CE",
+      "label": "Ecarts de réévaluation",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "3e",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AH": {
+      "code": "AH",
+      "label": "Autres immobilisations incorporelles",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "CF": {
+      "code": "CF",
+      "label": "Réserves indisponibles",
+      "current_year": 30000000,
+      "prior_year": 30000014,
+      "fields": {
+        "Note": "14",
+        "EXERCICE AU 31/12/N NET": 30000000,
+        "EXERCICE AU 31/12/N-1 NET": 30000014
+      }
+    },
+    "AI": {
+      "code": "AI",
+      "label": "IMMOBILISATIONS CORPORELLES",
+      "current_year": 543250520,
+      "prior_year": 601332692,
+      "fields": {
+        "Note": "3",
+        "EXERCICE AU 31/12/ N BRUT": 4944098139,
+        "AMORT et DEPREC.": 4400847619,
+        "NET": 543250520,
+        "EXERCICE AU 31/12/N-1 NET": 601332692
+      }
+    },
+    "CG": {
+      "code": "CG",
+      "label": "Réserves libres",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "14",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AJ": {
+      "code": "AJ",
+      "label": "Terrains (1) (1)dont Placement en Net…………../……………",
+      "current_year": 15233726,
+      "prior_year": 19797200,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 1884123400,
+        "AMORT et DEPREC.": 1868889674,
+        "NET": 15233726,
+        "EXERCICE AU 31/12/N-1 NET": 19797200
+      }
+    },
+    "CH": {
+      "code": "CH",
+      "label": "Report à nouveau                                  (+ ou -)",
+      "current_year": 3990290789,
+      "prior_year": 3972036750,
+      "fields": {
+        "Note": "14",
+        "EXERCICE AU 31/12/N NET": 3990290789,
+        "EXERCICE AU 31/12/N-1 NET": 3972036750
+      }
+    },
+    "AK": {
+      "code": "AK",
+      "label": "Bâtiments (1) (1) dont Placementen en Net…………../……….….",
+      "current_year": 390437732,
+      "prior_year": 419144894,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 559819911,
+        "AMORT et DEPREC.": 169382179,
+        "NET": 390437732,
+        "EXERCICE AU 31/12/N-1 NET": 419144894
+      }
+    },
+    "CJ": {
+      "code": "CJ",
+      "label": "Résultat net de l'exercice (bénéfice + ou perte -)",
+      "current_year": -452948553,
+      "prior_year": 119360446,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": -452948553,
+        "EXERCICE AU 31/12/N-1 NET": 119360446
+      }
+    },
+    "AL": {
+      "code": "AL",
+      "label": "Aménagements, agencements et installations",
+      "current_year": 34480529,
+      "prior_year": 42062566,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 561746922,
+        "AMORT et DEPREC.": 527266393,
+        "NET": 34480529,
+        "EXERCICE AU 31/12/N-1 NET": 42062566
+      }
+    },
+    "CL": {
+      "code": "CL",
+      "label": "Subventions d'investissement",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "15",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AM": {
+      "code": "AM",
+      "label": "Matériel, mobilier et actifs biologiques",
+      "current_year": 21221094,
+      "prior_year": 31341892,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 312303287,
+        "AMORT et DEPREC.": 291082193,
+        "NET": 21221094,
+        "EXERCICE AU 31/12/N-1 NET": 31341892
+      }
+    },
+    "CM": {
+      "code": "CM",
+      "label": "Provisions réglementées",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "15",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AN": {
+      "code": "AN",
+      "label": "Matériel de transport",
+      "current_year": 81877439,
+      "prior_year": 88986140,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 1626104619,
+        "AMORT et DEPREC.": 1544227180,
+        "NET": 81877439,
+        "EXERCICE AU 31/12/N-1 NET": 88986140
+      }
+    },
+    "CP": {
+      "code": "CP",
+      "label": "TOTAL CAPITAUX PROPRES ET RESSOURCES ASSIMILEES",
+      "current_year": 3717342236,
+      "prior_year": 4271397196,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": 3717342236,
+        "EXERCICE AU 31/12/N-1 NET": 4271397196
+      }
+    },
+    "AP": {
+      "code": "AP",
+      "label": "AVANCES ETACOMPTES VERSES SUR IMMOBILISATION S",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "3",
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "DA": {
+      "code": "DA",
+      "label": "Emprunts et dettes financières diverses",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "16",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "AQ": {
+      "code": "AQ",
+      "label": "IMMOBILISATIONS FINANCIERES",
+      "current_year": 663972140,
+      "prior_year": 369568893,
+      "fields": {
+        "Note": "4",
+        "EXERCICE AU 31/12/ N BRUT": 663972140,
+        "AMORT et DEPREC.": 0,
+        "NET": 663972140,
+        "EXERCICE AU 31/12/N-1 NET": 369568893
+      }
+    },
+    "DB": {
+      "code": "DB",
+      "label": "Dettes de location acquisition",
+      "current_year": 20343462,
+      "prior_year": 38053560,
+      "fields": {
+        "Note": "16",
+        "EXERCICE AU 31/12/N NET": 20343462,
+        "EXERCICE AU 31/12/N-1 NET": 38053560
+      }
+    },
+    "AR": {
+      "code": "AR",
+      "label": "Titres de participation",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "DC": {
+      "code": "DC",
+      "label": "Provisions pour risques et charges",
+      "current_year": 116698676,
+      "prior_year": 150896277,
+      "fields": {
+        "Note": "16",
+        "EXERCICE AU 31/12/N NET": 116698676,
+        "EXERCICE AU 31/12/N-1 NET": 150896277
+      }
+    },
+    "AS": {
+      "code": "AS",
+      "label": "Autres immobilisations financières",
+      "current_year": 663972140,
+      "prior_year": 369568893,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 663972140,
+        "AMORT et DEPREC.": 0,
+        "NET": 663972140,
+        "EXERCICE AU 31/12/N-1 NET": 369568893
+      }
+    },
+    "DD": {
+      "code": "DD",
+      "label": "TOTAL DETTES FINANCIERES ET RESSOURCES ASSIMILEES",
+      "current_year": 137042138,
+      "prior_year": 188949837,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": 137042138,
+        "EXERCICE AU 31/12/N-1 NET": 188949837
+      }
+    },
+    "AZ": {
+      "code": "AZ",
+      "label": "TOTAL ACTIF IMMOBILISE",
+      "current_year": 1207222660,
+      "prior_year": 970901585,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 5699223032,
+        "AMORT et DEPREC.": 4492000372,
+        "NET": 1207222660,
+        "EXERCICE AU 31/12/N-1 NET": 970901585
+      }
+    },
+    "DF": {
+      "code": "DF",
+      "label": "TOTAL RESSOURCES STABLES",
+      "current_year": 3854384374,
+      "prior_year": 4460347033,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": 3854384374,
+        "EXERCICE AU 31/12/N-1 NET": 4460347033
+      }
+    },
+    "BA": {
+      "code": "BA",
+      "label": "ACTIF CIRCULANT HAO",
+      "current_year": 1050002,
+      "prior_year": 0,
+      "fields": {
+        "Note": "5",
+        "EXERCICE AU 31/12/ N BRUT": 1050002,
+        "AMORT et DEPREC.": 0,
+        "NET": 1050002,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "DH": {
+      "code": "DH",
+      "label": "Dettes circulantes HAO",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "5",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "BB": {
+      "code": "BB",
+      "label": "STOCKS ET ENCOURS",
+      "current_year": 310000,
+      "prior_year": 1116596,
+      "fields": {
+        "Note": "6",
+        "EXERCICE AU 31/12/ N BRUT": 310000,
+        "AMORT et DEPREC.": 0,
+        "NET": 310000,
+        "EXERCICE AU 31/12/N-1 NET": 1116596
+      }
+    },
+    "DI": {
+      "code": "DI",
+      "label": "Clients, avances reçues",
+      "current_year": 185067341,
+      "prior_year": 0,
+      "fields": {
+        "Note": "7",
+        "EXERCICE AU 31/12/N NET": 185067341,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "BG": {
+      "code": "BG",
+      "label": "CREANCES ET EMPLOIS ASSIMILES",
+      "current_year": 6744875221,
+      "prior_year": 4854103428,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 6744875221,
+        "AMORT et DEPREC.": 0,
+        "NET": 6744875221,
+        "EXERCICE AU 31/12/N-1 NET": 4854103428
+      }
+    },
+    "DJ": {
+      "code": "DJ",
+      "label": "Fournisseurs d'exploitation",
+      "current_year": 1340954462,
+      "prior_year": 468707124,
+      "fields": {
+        "Note": "17",
+        "EXERCICE AU 31/12/N NET": 1340954462,
+        "EXERCICE AU 31/12/N-1 NET": 468707124
+      }
+    },
+    "BH": {
+      "code": "BH",
+      "label": "Fournisseurs avances versées",
+      "current_year": 74918258,
+      "prior_year": 639121283,
+      "fields": {
+        "Note": "17",
+        "EXERCICE AU 31/12/ N BRUT": 74918258,
+        "AMORT et DEPREC.": 0,
+        "NET": 74918258,
+        "EXERCICE AU 31/12/N-1 NET": 639121283
+      }
+    },
+    "DK": {
+      "code": "DK",
+      "label": "Dettes fiscales et sociales",
+      "current_year": 154830872,
+      "prior_year": 190987165,
+      "fields": {
+        "Note": "18",
+        "EXERCICE AU 31/12/N NET": 154830872,
+        "EXERCICE AU 31/12/N-1 NET": 190987165
+      }
+    },
+    "BI": {
+      "code": "BI",
+      "label": "Clients",
+      "current_year": 4023365341,
+      "prior_year": 3544985199,
+      "fields": {
+        "Note": "7",
+        "EXERCICE AU 31/12/ N BRUT": 4023365341,
+        "AMORT et DEPREC.": 0,
+        "NET": 4023365341,
+        "EXERCICE AU 31/12/N-1 NET": 3544985199
+      }
+    },
+    "DM": {
+      "code": "DM",
+      "label": "Autres dettes",
+      "current_year": 1402549426,
+      "prior_year": 1040075125,
+      "fields": {
+        "Note": "19",
+        "EXERCICE AU 31/12/N NET": 1402549426,
+        "EXERCICE AU 31/12/N-1 NET": 1040075125
+      }
+    },
+    "BJ": {
+      "code": "BJ",
+      "label": "Autres créances",
+      "current_year": 2646591622,
+      "prior_year": 669996946,
+      "fields": {
+        "Note": "8",
+        "EXERCICE AU 31/12/ N BRUT": 2646591622,
+        "AMORT et DEPREC.": 0,
+        "NET": 2646591622,
+        "EXERCICE AU 31/12/N-1 NET": 669996946
+      }
+    },
+    "DN": {
+      "code": "DN",
+      "label": "Provisions pour risques à court terme",
+      "current_year": 0,
+      "prior_year": 10748580,
+      "fields": {
+        "Note": "19",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 10748580
+      }
+    },
+    "BK": {
+      "code": "BK",
+      "label": "TOTAL ACTIF CIRCULANT",
+      "current_year": 6746235223,
+      "prior_year": 4855220024,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 6746235223,
+        "AMORT et DEPREC.": 0,
+        "NET": 6746235223,
+        "EXERCICE AU 31/12/N-1 NET": 4855220024
+      }
+    },
+    "DP": {
+      "code": "DP",
+      "label": "TOTAL PASSIF CIRCULANT",
+      "current_year": 3083402101,
+      "prior_year": 1710517994,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": 3083402101,
+        "EXERCICE AU 31/12/N-1 NET": 1710517994
+      }
+    },
+    "BQ": {
+      "code": "BQ",
+      "label": "Titres de placement",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "9",
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "BR": {
+      "code": "BR",
+      "label": "Valeurs à encaisser",
+      "current_year": 0,
+      "prior_year": 148963,
+      "fields": {
+        "Note": "10",
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": 0,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 148963
+      }
+    },
+    "DQ": {
+      "code": "DQ",
+      "label": "Banques, crédits d'escompte",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "20",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "BS": {
+      "code": "BS",
+      "label": "Banques, chèques postaux, caisse et assimilés",
+      "current_year": 15693221,
+      "prior_year": 345700037,
+      "fields": {
+        "Note": "11",
+        "EXERCICE AU 31/12/ N BRUT": 15693221,
+        "AMORT et DEPREC.": 0,
+        "NET": 15693221,
+        "EXERCICE AU 31/12/N-1 NET": 345700037
+      }
+    },
+    "DR": {
+      "code": "DR",
+      "label": "Banques, établissements financiers et crédits de trésorerie",
+      "current_year": 1031364629,
+      "prior_year": 1105582,
+      "fields": {
+        "Note": "20",
+        "EXERCICE AU 31/12/N NET": 1031364629,
+        "EXERCICE AU 31/12/N-1 NET": 1105582
+      }
+    },
+    "BT": {
+      "code": "BT",
+      "label": "TOTAL TRESORERIE-ACTIF",
+      "current_year": 15693221,
+      "prior_year": 345849000,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 15693221,
+        "AMORT et DEPREC.": 0,
+        "NET": 15693221,
+        "EXERCICE AU 31/12/N-1 NET": 345849000
+      }
+    },
+    "DT": {
+      "code": "DT",
+      "label": "TOTAL TRESORERIE-PASSIF",
+      "current_year": 1031364629,
+      "prior_year": 1105582,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": 1031364629,
+        "EXERCICE AU 31/12/N-1 NET": 1105582
+      }
+    },
+    "BU": {
+      "code": "BU",
+      "label": "Ecart de conversion-Actif",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "12",
+        "EXERCICE AU 31/12/ N BRUT": 0,
+        "AMORT et DEPREC.": null,
+        "NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "DV": {
+      "code": "DV",
+      "label": "Ecart de conversion-Passif",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "Note": "12",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "BZ": {
+      "code": "BZ",
+      "label": "TOTAL GENERAL",
+      "current_year": 7969151104,
+      "prior_year": 6171970609,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/ N BRUT": 12461151476,
+        "AMORT et DEPREC.": 4492000372,
+        "NET": 7969151104,
+        "EXERCICE AU 31/12/N-1 NET": 6171970609
+      }
+    },
+    "DZ": {
+      "code": "DZ",
+      "label": "TOTAL GENERAL",
+      "current_year": 7969151104,
+      "prior_year": 6171970609,
+      "fields": {
+        "Note": null,
+        "EXERCICE AU 31/12/N NET": 7969151104,
+        "EXERCICE AU 31/12/N-1 NET": 6171970609
+      }
+    },
+    "TA": {
+      "code": "TA",
+      "label": "Vente de marchandises                                                   A",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RA": {
+      "code": "RA",
+      "label": "Achat de marchandises",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "22",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RB": {
+      "code": "RB",
+      "label": "Variation de stocks de marchandises",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "6",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "XA": {
+      "code": "XA",
+      "label": "MARGE COMMERCIALE (Somme TA à RB)",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TB": {
+      "code": "TB",
+      "label": "Vente de produits fabriqués                                            B",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TC": {
+      "code": "TC",
+      "label": "Travaux et services vendus                                            C",
+      "current_year": 3579625956,
+      "prior_year": 5193901523,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 3579625956,
+        "EXERCICE AU 31/12/N-1 NET": 5193901523
+      }
+    },
+    "TD": {
+      "code": "TD",
+      "label": "Produits accessoires                                                      D",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "XB": {
+      "code": "XB",
+      "label": "CHIFFRE D'AFFAIRES (A+B+C+D)",
+      "current_year": 3579625956,
+      "prior_year": 5193901523,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": 3579625956,
+        "EXERCICE AU 31/12/N-1 NET": 5193901523
+      }
+    },
+    "TE": {
+      "code": "TE",
+      "label": "Production stockée (ou destockage)",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "6",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TF": {
+      "code": "TF",
+      "label": "Production immobilisée",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TG": {
+      "code": "TG",
+      "label": "Subvention d'exploitation",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TH": {
+      "code": "TH",
+      "label": "Autres produits",
+      "current_year": 62145567,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "21",
+        "EXERCICE AU 31/12/N NET": 62145567,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TI": {
+      "code": "TI",
+      "label": "Transfert de charges d'exploitation",
+      "current_year": 112555802,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "12",
+        "EXERCICE AU 31/12/N NET": 112555802,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RC": {
+      "code": "RC",
+      "label": "Achat de matières premières et fournitures liées",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "22",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RD": {
+      "code": "RD",
+      "label": "Variation de stocks de matières premières et fournitures liées",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "6",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RE": {
+      "code": "RE",
+      "label": "Autres achats",
+      "current_year": 627114900,
+      "prior_year": 284788036,
+      "fields": {
+        "NOTE": "22",
+        "EXERCICE AU 31/12/N NET": 627114900,
+        "EXERCICE AU 31/12/N-1 NET": 284788036
+      }
+    },
+    "RF": {
+      "code": "RF",
+      "label": "Variation de stocks d'autres approvisionnement",
+      "current_year": 806596,
+      "prior_year": 1472062,
+      "fields": {
+        "NOTE": "6",
+        "EXERCICE AU 31/12/N NET": 806596,
+        "EXERCICE AU 31/12/N-1 NET": 1472062
+      }
+    },
+    "RG": {
+      "code": "RG",
+      "label": "Transports",
+      "current_year": 28465653,
+      "prior_year": 268779990,
+      "fields": {
+        "NOTE": "23",
+        "EXERCICE AU 31/12/N NET": 28465653,
+        "EXERCICE AU 31/12/N-1 NET": 268779990
+      }
+    },
+    "RH": {
+      "code": "RH",
+      "label": "Services extérieurs",
+      "current_year": 1440713654,
+      "prior_year": 2031650019,
+      "fields": {
+        "NOTE": "24",
+        "EXERCICE AU 31/12/N NET": 1440713654,
+        "EXERCICE AU 31/12/N-1 NET": 2031650019
+      }
+    },
+    "RI": {
+      "code": "RI",
+      "label": "Impôts et taxes",
+      "current_year": 101848930,
+      "prior_year": 102977936,
+      "fields": {
+        "NOTE": "25",
+        "EXERCICE AU 31/12/N NET": 101848930,
+        "EXERCICE AU 31/12/N-1 NET": 102977936
+      }
+    },
+    "RJ": {
+      "code": "RJ",
+      "label": "Autres charges",
+      "current_year": 129032234,
+      "prior_year": 54326449,
+      "fields": {
+        "NOTE": "26",
+        "EXERCICE AU 31/12/N NET": 129032234,
+        "EXERCICE AU 31/12/N-1 NET": 54326449
+      }
+    },
+    "XC": {
+      "code": "XC",
+      "label": "VALEUR AJOUTEE (XB+RA+RB)+(somme TE à RJ)",
+      "current_year": 1426345358,
+      "prior_year": 2449907031,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": 1426345358,
+        "EXERCICE AU 31/12/N-1 NET": 2449907031
+      }
+    },
+    "RK": {
+      "code": "RK",
+      "label": "Charges de personnel",
+      "current_year": 1453097146,
+      "prior_year": 987478470,
+      "fields": {
+        "NOTE": "27",
+        "EXERCICE AU 31/12/N NET": 1453097146,
+        "EXERCICE AU 31/12/N-1 NET": 987478470
+      }
+    },
+    "XD": {
+      "code": "XD",
+      "label": "EXCEDENT BRUT D'EXPLOITATION (XC+RK)",
+      "current_year": -26751788,
+      "prior_year": 1462428561,
+      "fields": {
+        "NOTE": "28",
+        "EXERCICE AU 31/12/N NET": -26751788,
+        "EXERCICE AU 31/12/N-1 NET": 1462428561
+      }
+    },
+    "TJ": {
+      "code": "TJ",
+      "label": "Reprise d'amortissements, provisions et dépréciations",
+      "current_year": 150896277,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "28",
+        "EXERCICE AU 31/12/N NET": 150896277,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RL": {
+      "code": "RL",
+      "label": "Dotation aux amortissements aux provisions et dépréciations",
+      "current_year": 216356447,
+      "prior_year": 1053886117,
+      "fields": {
+        "NOTE": "3C & 28",
+        "EXERCICE AU 31/12/N NET": 216356447,
+        "EXERCICE AU 31/12/N-1 NET": 1053886117
+      }
+    },
+    "XE": {
+      "code": "XE",
+      "label": "RESULTAT D'EXPLOITATION (XD+TJ+RL)",
+      "current_year": -92211958,
+      "prior_year": 408542444,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": -92211958,
+        "EXERCICE AU 31/12/N-1 NET": 408542444
+      }
+    },
+    "TK": {
+      "code": "TK",
+      "label": "Revenus financiers et assimilés",
+      "current_year": 5250000,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "29",
+        "EXERCICE AU 31/12/N NET": 5250000,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TL": {
+      "code": "TL",
+      "label": "Reprise de provisions et dépréciations financières",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "28",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TM": {
+      "code": "TM",
+      "label": "Transfert de charges financières",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "12",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RM": {
+      "code": "RM",
+      "label": "Frais financiers et charges assimilées",
+      "current_year": 198401998,
+      "prior_year": 35441445,
+      "fields": {
+        "NOTE": "29",
+        "EXERCICE AU 31/12/N NET": 198401998,
+        "EXERCICE AU 31/12/N-1 NET": 35441445
+      }
+    },
+    "RN": {
+      "code": "RN",
+      "label": "Dotation aux provisions et aux dépréciations financières",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "3C & 28",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "XF": {
+      "code": "XF",
+      "label": "RESULTAT FINANCIER (somme TK à RN)",
+      "current_year": -193151998,
+      "prior_year": -35441445,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": -193151998,
+        "EXERCICE AU 31/12/N-1 NET": -35441445
+      }
+    },
+    "XG": {
+      "code": "XG",
+      "label": "RESULTAT DES ACTIVITES ORDINAIRES (XE à XF)",
+      "current_year": -285363956,
+      "prior_year": 373100999,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": -285363956,
+        "EXERCICE AU 31/12/N-1 NET": 373100999
+      }
+    },
+    "TN": {
+      "code": "TN",
+      "label": "Produits des cessions d'immobilisations",
+      "current_year": 1719079,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "3D",
+        "EXERCICE AU 31/12/N NET": 1719079,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "TO": {
+      "code": "TO",
+      "label": "Autres Produits HAO",
+      "current_year": 31700,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "30",
+        "EXERCICE AU 31/12/N NET": 31700,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RO": {
+      "code": "RO",
+      "label": "Valeur comptable des cessions d'immobilisation",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "3D",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RP": {
+      "code": "RP",
+      "label": "Autres charges HAO",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "30",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "XH": {
+      "code": "XH",
+      "label": "RESULTAT HORS ACTIVITE ORDINAIRE (SommeTN à RP)",
+      "current_year": 1750779,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": 1750779,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RQ": {
+      "code": "RQ",
+      "label": "Participation des travailleurs",
+      "current_year": 0,
+      "prior_year": 0,
+      "fields": {
+        "NOTE": "30",
+        "EXERCICE AU 31/12/N NET": 0,
+        "EXERCICE AU 31/12/N-1 NET": 0
+      }
+    },
+    "RS": {
+      "code": "RS",
+      "label": "Impôt sur le résultat",
+      "current_year": 169335376,
+      "prior_year": 253740553,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": 169335376,
+        "EXERCICE AU 31/12/N-1 NET": 253740553
+      }
+    },
+    "XI": {
+      "code": "XI",
+      "label": "RESULTAT NET (XG+XH+RQ+RS)",
+      "current_year": -452948553,
+      "prior_year": 119360446,
+      "fields": {
+        "NOTE": null,
+        "EXERCICE AU 31/12/N NET": -452948553,
+        "EXERCICE AU 31/12/N-1 NET": 119360446
+      }
+    }
+  }
+}
