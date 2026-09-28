@@ -18,3 +18,17 @@ data/test_documents/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local prototype data
+data/uploads/
+data/prototype.db
+data/llm_cache/
+
+# Tests and tooling
+.pytest_cache/
+.ruff_cache/

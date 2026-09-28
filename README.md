@@ -1,5 +1,34 @@
 # SYSCOHADA Financial Statement Extraction & Structuring Pipeline
 
+> **A full-chain scaffold has been added on top of this pipeline** (branch
+> `base/scaffold`). The extraction work described below is unchanged and still
+> lives in `backend/document_processing/`; everything around it — domain layer,
+> ratio engine, checks, Flask API, React interface, tests — is new.
+>
+> **Start here: [`docs/LEARNING-PATH.md`](docs/LEARNING-PATH.md).** It lists
+> what is built, what is left to you, in which order, and with which test.
+>
+> | Document | What it answers |
+> |---|---|
+> | [`docs/LEARNING-PATH.md`](docs/LEARNING-PATH.md) | What do I do next, week by week |
+> | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why is the code arranged this way |
+> | [`docs/DATA-MODEL-REVIEW.md`](docs/DATA-MODEL-REVIEW.md) | What changed in the database schema, and why |
+>
+> Running it:
+>
+> ```bash
+> python -m venv .venv && .venv\Scripts\activate
+> pip install -r requirements.txt
+> cd backend && python wsgi.py        # http://127.0.0.1:5000/api/health
+> ```
+> ```bash
+> cd frontend && npm install && npm run dev    # http://localhost:5173
+> ```
+> ```bash
+> pytest                               # 52 passed, 18 skipped — the 18 are the exercises
+> ```
+
+
 ## What this is
 
 A prototype that ingests real SYSCOHADA financial statements (balance sheet and

@@ -1,0 +1,180 @@
+/* One light surface, one accent colour, and space doing the work.
+ *
+ * The rule this stylesheet follows: colour carries meaning, never decoration.
+ * Ochre marks what the user must act on. Red and amber are reserved for a
+ * failing check and a warning — nothing else may use them, or they stop
+ * meaning anything. Everything else is grey, and hierarchy comes from type
+ * size and whitespace.
+ *
+ * This is a deliberate discipline, not a shortage of ideas. An interface a
+ * partner reads in front of a client has to be quiet.
+ */
+
+:root {
+  --ink: #1c1917;
+  --ink-soft: #57534e;
+  --ink-faint: #a8a29e;
+
+  --surface: #ffffff;
+  --surface-sunken: #fafaf9;
+  --line: #e7e5e4;
+
+  --accent: #b45309;          /* ochre — the dossier's own colour */
+  --accent-soft: #fef3c7;
+
+  --danger: #b91c1c;          /* a blocking check that fails */
+  --danger-soft: #fef2f2;
+  --warn: #a16207;            /* a warning */
+  --warn-soft: #fefce8;
+  --ok: #15803d;              /* a check that passes */
+  --ok-soft: #f0fdf4;
+
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(28, 25, 23, 0.06);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Amounts are read in columns and compared down the page: they need a font
+ * where every digit has the same width, or the eye cannot line them up. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  text-align: right;
+  white-space: nowrap;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* --- layout ------------------------------------------------------------ */
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 28px;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+.app-header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+.app-header .sub { color: var(--ink-faint); font-size: 13px; }
+.app-header nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
+.app-header nav a { color: var(--ink-soft); }
+.app-header nav a.active { color: var(--accent); font-weight: 500; }
+
+main { max-width: 1180px; margin: 0 auto; padding: 28px; }
+
+.page-title { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.02em; }
+.page-subtitle { color: var(--ink-soft); margin: 0 0 24px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 18px;
+}
+.card h2 { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 960px) { .split { grid-template-columns: 1fr; } }
+
+.grid-ratios { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+
+/* --- table ------------------------------------------------------------- */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-faint);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: 8px 10px; border-bottom: 1px solid var(--surface-sunken); vertical-align: middle; }
+tr:hover td { background: var(--surface-sunken); }
+.code { font-weight: 600; letter-spacing: 0.02em; }
+.label { color: var(--ink-soft); }
+
+/* A corrected field is marked, always. BR-10 is only useful if the analyst
+ * can see at a glance what the extractor got wrong and what a human changed. */
+tr.corrected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.was { color: var(--ink-faint); font-size: 12px; text-decoration: line-through; }
+
+/* --- pills ------------------------------------------------------------- */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.fail { background: var(--danger-soft); color: var(--danger); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.neutral { background: var(--surface-sunken); color: var(--ink-soft); border-color: var(--line); }
+.pill.accent { background: var(--accent-soft); color: var(--accent); }
+
+/* --- controls ---------------------------------------------------------- */
+button {
+  font: inherit;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover { border-color: var(--ink-faint); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.06); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+input, select {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
+input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+input.num { text-align: right; }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--ink-soft); }
+.faint { color: var(--ink-faint); font-size: 13px; }
+
+.banner {
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+.banner.fail { background: var(--danger-soft); color: var(--danger); }
+.banner.info { background: var(--accent-soft); color: var(--accent); }
+
+/* A placeholder that says what is missing and why, rather than an empty box
+ * the reader has to interpret. */
+.todo {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+  color: var(--ink-soft);
+  background: var(--surface);
+  font-size: 14px;
+}
+.todo strong { color: var(--accent); }
