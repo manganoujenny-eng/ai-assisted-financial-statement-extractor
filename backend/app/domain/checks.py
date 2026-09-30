@@ -20,7 +20,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from email import message
 from typing import Callable
+
+from jinja2.utils import missing
 
 from .statement import FinancialStatement
 from .syscohada import REQUIRED_CODES
@@ -31,7 +34,7 @@ WARNING = "WARNING"
 
 
 @dataclass(frozen=True)
-class CheckOutcome:
+class CheckOutcome: ##DEFINES THE RESULT OF THE CHECKS
     """What one check has to say about one statement.
 
     ``gap`` is the quantified discrepancy the dossier asks every check to
@@ -118,6 +121,117 @@ def check_balance_equilibrium(statement: FinancialStatement) -> CheckOutcome:
         items_used=("BZ", "DZ"),
     )
 
+# ==========================================================================
+# CHK002 — worked example of a BLOCKING check
+# ==========================================================================
+def check_subtotal_consistency(statement: FinancialStatement) -> CheckOutcome:
+    missing = statement.missing(
+        ["AZ", "BK" , "BT" , "BZ" , "CP" , "DD" , "DP" , "DT" ,"DZ" ]
+    )
+    if missing:
+        return _skipped(
+            "CHK002",
+            "Subtotal consistency" ,
+            BLOCKING,
+            missing,
+        )
+    #if BU and DV are missing chang it in to value zero
+    bu = statement.get("BU")
+    dv = statement.get("DV")
+
+    asset_total = statement["AZ"] + statement["BK"] + statement["BT"]
+    if bu is not None:
+        asset_total += bu
+
+    liability_total = statement["CP"] + statement["DD"] + statement["DP"] + statement["DT"]
+    if dv is not None:
+        liability_total += dv
+
+    asset_gap = (asset_total - statement["BZ"]).value
+    liability_gap = (liability_total - statement["DZ"]).value
+
+    if asset_gap == 0 and liability_gap == 0:
+        return CheckOutcome(
+            code="CHK002",
+            label="Subtotal consistency",
+            severity=WARNING,
+            passed=True,
+            gap=0,
+            message="asset and liability subtotal consistency",
+            items_used=(
+                "AZ", "BK", "BT", "BU", "BZ",
+                "CP", "DD", "DP", "DT", "DV", "DZ",
+            ),
+        )
+    if asset_gap != 0 and liability_gap != 0:
+        message = (
+            f"asset gap of {Amount(asset_gap)}; "
+            f"liability gap of {Amount(liability_gap)}; "
+        )
+    elif asset_gap != 0:
+        message = (
+            f"asset subtotal is inconsitency , "
+            f"gap of {Amount(asset_gap)}"
+        )
+
+    else:
+        message = (
+            f"liability subtotal is inconsistent "
+            f"gap of {Amount(liability_gap)}"
+        )
+
+    gap = asset_gap if abs(asset_gap) >= abs(liability_gap) else liability_gap
+
+    return CheckOutcome(
+        code="CHK002",
+        label="Subtotal consistency",
+        severity=BLOCKING,
+        passed= False,
+        gap=gap,
+        message=message,
+        items_used=(
+            "AZ", "BK", "BT", "BU", "BZ",
+            "CP", "DD", "DP", "DT", "DV", "DZ",
+        ),
+    )
+
+# ==========================================================================
+# CHK003 — worked example of a BLOCKING check
+# ==========================================================================
+def check_net_income_consistency(statement: FinancialStatement) -> CheckOutcome:
+    missing = statement.missing(["XI" , "CJ"])
+
+    if missing:
+        return _skipped(
+            "CHK003",
+            "Net income consistency",
+            BLOCKING,
+            missing,
+        )
+    income_statement_result = statement["XI"]
+    balance_sheet_result = statement["CJ"]
+
+    gap = (income_statement_result - balance_sheet_result).value
+    passed = gap == 0
+
+    return CheckOutcome(
+        code="CHK003",
+        label="Net income consistency",
+        severity=BLOCKING,
+        passed=passed,
+        gap=gap,
+        message=(
+            "XI - CJ"
+            if passed
+            else (
+            f"XI ({income_statement_result}) ≠ "
+            f"CJ ({balance_sheet_result}), "
+            f"gap of {Amount(gap)}"
+        )
+    ),
+    items_used = ("XI" , "CJ")
+)
+
 
 # ==========================================================================
 # CHK005 — worked example of a WARNING check
@@ -148,69 +262,33 @@ def check_plausible_signs(statement: FinancialStatement) -> CheckOutcome:
     )
 
 
-# ==========================================================================
-# CHK002 — YOUR EXERCISE (blocking)
-# ==========================================================================
-def check_subtotal_consistency(statement: FinancialStatement) -> CheckOutcome:
-    """BR-06 — the headings inside an aggregate sum to that aggregate's total.
-
-    TO IMPLEMENT. On the SYSCOHADA revised balance sheet:
-
-        assets      : AZ + BK + BT + BU  ==  BZ
-        liabilities : CP + DD + DP + DT + DV  ==  DZ
-
-    BU and DV (currency translation differences) are frequently absent from a
-    package. Treat an absent BU/DV as zero *for this check only* — that is a
-    presentation convention, not the substitution BR-02 forbids. AZ, BK, BT,
-    BZ, CP, DD, DP, DT, DZ on the other hand are required: if one is missing,
-    return ``_skipped(...)``.
-
-    Report the larger of the two gaps, and name in ``message`` which side is
-    out. An engagement manager reading "liabilities side out by 1 000" knows
-    where to look; one reading "subtotals inconsistent" does not.
-
-    Tests waiting for you: ``tests/unit/domain/test_checks.py::TestCHK002``.
-    Remove the ``@pytest.mark.skip`` there when you start.
-    """
-    raise NotImplementedError("CHK002 — see the docstring, then delete this line")
-
 
 # ==========================================================================
-# CHK003 — YOUR EXERCISE (blocking)
-# ==========================================================================
-def check_net_income_consistency(statement: FinancialStatement) -> CheckOutcome:
-    """BR-07 — net income in the income statement equals net income in equity.
-
-    TO IMPLEMENT. XI (RÉSULTAT NET, income statement) must equal CJ (Résultat
-    net de l'exercice, carried inside equity on the liabilities side).
-
-    Watch out, and this is the interesting part: your own README already
-    records that XI/XG carry a sign ambiguity, because the income statement's
-    ``+``/``-`` operator column is not yet interpreted. So this check will
-    sometimes fail on a *correctly* extracted document. That is a finding,
-    not a bug — it belongs in the failure typology of dossier §19.3, and
-    resolving the sign column is the prerequisite.
-
-    Start with the strict equality. When it fires on a real document, look at
-    the operator column before touching the check.
-    """
-    raise NotImplementedError("CHK003 — see the docstring, then delete this line")
-
-
-# ==========================================================================
-# CHK004 — YOUR EXERCISE (blocking)
+# CHK004 — worked example of a BLOCKING check
 # ==========================================================================
 def check_completeness(statement: FinancialStatement) -> CheckOutcome:
-    """Every item the five core ratios need is present.
+    missing = statement.missing(REQUIRED_CODES)
 
-    TO IMPLEMENT, and it is the shortest of the three: compare
-    ``statement.codes()`` against ``REQUIRED_CODES`` (imported above) and
-    fail if anything is missing, listing exactly what.
+    if not  missing:
+        return CheckOutcome(
+            code="CHK004",
+            label="Completeness",
+            severity=BLOCKING,
+            passed=True,
+            gap=0 ,
+            message= "all required items are present " ,
+            items_used = REQUIRED_CODES,
+        )
+    return CheckOutcome(
+        code="CHK004",
+        label="Completeness",
+        severity=BLOCKING,
+        passed=False,
+        gap=len(missing),
+        message= f"missing required items: {', '.join(missing)}",
+        items_used= tuple(missing)
+    )
 
-    ``gap`` here is the *count* of missing items. A check's gap does not have
-    to be a monetary amount — it has to be a number that means something.
-    """
-    raise NotImplementedError("CHK004 — see the docstring, then delete this line")
 
 
 # ==========================================================================

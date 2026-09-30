@@ -1,4 +1,4 @@
-"""R1 — Current ratio.  ***WORKED EXAMPLE: read this one first.***
+"""      ****************  R1 — Current ratio. ************************
 
     (Current assets + Cash) / (Current liabilities + Short-term bank facilities)
     (BK + BT) / (DP + DT)

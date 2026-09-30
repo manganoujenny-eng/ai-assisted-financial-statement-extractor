@@ -39,7 +39,14 @@ from .definition import HIGHER_IS_BETTER, RatioDefinition
 
 
 def calculate(statement: FinancialStatement) -> Decimal:
-    raise NotImplementedError("R5 — see the module docstring")
+    numerator = statement["XI"]
+    denominator = statement["CP"]
+
+    if denominator.value < 0 :
+        raise ValueError("negative equity")
+
+    return (numerator / denominator) * Decimal(100)
+
 
 
 DEFINITION = RatioDefinition(
@@ -47,7 +54,7 @@ DEFINITION = RatioDefinition(
     name="Return on equity",
     family="Profitability",
     formula="XI / CP x 100",
-    required_items=(),  # TODO
+    required_items=("XI" , "CP"),
     unit="%",
     direction=HIGHER_IS_BETTER,
     calculate=calculate,

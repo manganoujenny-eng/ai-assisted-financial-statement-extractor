@@ -61,7 +61,7 @@ class TestR1:
         assert result.reason == "zero denominator"
 
 
-@pytest.mark.skip(reason="EXERCISE: implement R2 (r02_equity_ratio.py)")
+
 class TestR2:
     def test_computes_the_expected_value(self, balanced):
         # CP 5 000 000 / (CP 5 000 000 + DD 2 000 000) = 0.714... -> 0.7
@@ -77,7 +77,7 @@ class TestR2:
         assert compute("R2", empty).status == NOT_COMPUTABLE
 
 
-@pytest.mark.skip(reason="EXERCISE: implement R3 (r03_stable_funding.py)")
+
 class TestR3:
     def test_computes_the_expected_value(self, balanced):
         # (CP 5 000 000 + DD 2 000 000) / AZ 4 000 000 = 1.75 -> 1.8
@@ -89,7 +89,7 @@ class TestR3:
         assert compute("R3", balanced.with_override("AZ", 0)).status == NOT_COMPUTABLE
 
 
-@pytest.mark.skip(reason="EXERCISE: implement R4 (r04_net_margin.py)")
+
 class TestR4:
     def test_computes_a_percentage(self, balanced):
         # XI 1 000 000 / XB 20 000 000 x 100 = 5.0 %
@@ -105,7 +105,7 @@ class TestR4:
         assert compute("R4", loss).value == Decimal("-10.0")
 
 
-@pytest.mark.skip(reason="EXERCISE: implement R5 (r05_return_on_equity.py)")
+
 class TestR5:
     def test_computes_a_percentage(self, balanced):
         # XI 1 000 000 / CP 5 000 000 x 100 = 20.0 %

@@ -61,7 +61,7 @@ class TestCHK005:
 
 
 # ==========================================================================
-@pytest.mark.skip(reason="EXERCISE: implement check_subtotal_consistency (BR-06)")
+
 class TestCHK002:
     def test_passes_when_both_sides_add_up(self, balanced):
         outcome = check_subtotal_consistency(balanced)
@@ -92,7 +92,7 @@ class TestCHK002:
         assert check_subtotal_consistency(without).passed
 
 
-@pytest.mark.skip(reason="EXERCISE: implement check_net_income_consistency (BR-07)")
+
 class TestCHK003:
     def test_passes_when_xi_equals_cj(self, balanced):
         assert check_net_income_consistency(balanced).passed
@@ -110,7 +110,7 @@ class TestCHK003:
         assert not check_net_income_consistency(broken).passed
 
 
-@pytest.mark.skip(reason="EXERCISE: implement check_completeness")
+
 class TestCHK004:
     def test_passes_when_every_required_item_is_present(self, balanced):
         assert check_completeness(balanced).passed

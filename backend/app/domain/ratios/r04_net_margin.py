@@ -34,7 +34,9 @@ from .definition import HIGHER_IS_BETTER, RatioDefinition
 
 
 def calculate(statement: FinancialStatement) -> Decimal:
-    raise NotImplementedError("R4 — see the module docstring")
+    numerator = statement["XI"]
+    denominator = statement["XB"]
+    return (numerator / denominator) * Decimal(100)
 
 
 DEFINITION = RatioDefinition(
@@ -42,7 +44,7 @@ DEFINITION = RatioDefinition(
     name="Net margin",
     family="Profitability",
     formula="XI / XB x 100",
-    required_items=(),  # TODO
+    required_items=("XI" , "XB"),
     unit="%",
     direction=HIGHER_IS_BETTER,
     calculate=calculate,

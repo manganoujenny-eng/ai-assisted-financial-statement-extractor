@@ -143,10 +143,11 @@ def test_the_whole_chain(client):
     # BR-14 — the sentence cites its reference.
     assert ratios["R1"]["interpretation"]["reference_source"]
 
-    # R2..R5 are still exercises: they say so, with a reason, and the
-    # dashboard keeps working. BR-02 — a reasoned absence, never a zero.
-    assert ratios["R5"]["status"] == "NOT_COMPUTABLE"
-    assert ratios["R5"]["value"] is None
+    # R2..R5 are implemented and the dashboard computes them.
+    assert ratios["R2"]["status"] == "COMPUTED"
+    assert ratios["R3"]["status"] == "COMPUTED"
+    assert ratios["R4"]["status"] == "COMPUTED"
+    assert ratios["R5"]["status"] == "COMPUTED"
 
     # --- FR-18, the dashboard -------------------------------------------
     response = client.get(f"/api/cases/{case_id}/analysis")
