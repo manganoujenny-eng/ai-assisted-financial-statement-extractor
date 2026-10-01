@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 from decimal import Decimal
+import anthropic
 
 from ...domain.ports import RawDocument, StructuredItem, StructuringResult
 from .cache import ResponseCache
@@ -89,7 +90,11 @@ class ClaudeStructurer:
         last_error: Exception | None = None
         for attempt in (1, 2):  # UC-03 / A2: one retry, and only one
             try:
-                raw_response, cost = self._call_model(document, attempt)
+                raw_response, cost = self._call_model(
+                    document,
+                    attempt,
+                    str(last_error) if last_error else None,
+                )
                 result = self._parse(raw_response, cost=cost)
                 self.cache.put(fingerprint, raw_response)
                 self.spent_usd += cost
@@ -145,31 +150,78 @@ class ClaudeStructurer:
             raw_response=raw_response,
         )
 
-    # --- the part you write ---------------------------------------------
-    def _call_model(self, document: RawDocument, attempt: int) -> tuple[str, Decimal]:
-        """Send the document text, get JSON back. Return (response, cost).
 
-        TO IMPLEMENT (week 4). Steps, in order:
+    def _call_model(
+        self,
+        document: RawDocument,
+        attempt: int,
+        validation_error: str | None = None,
+    ) -> tuple[str, Decimal]:
 
-        1. ``pip install anthropic``; read the key from ``ANTHROPIC_API_KEY``
-           and never, under any circumstance, commit it. ``.env`` is already
-           in ``.gitignore`` — check that it still is before your first call.
-        2. Write the prompt in ``prompts/v1.md`` and load it from there, not
-           from a string in this file. Versioned prompts are what make FR-23
-           ("replay an extraction with a different prompt version") possible,
-           and comparing two prompt versions on the same document is a
-           measurement your thesis can use.
-        3. Ask for JSON matching ``OUTPUT_SCHEMA``. Send the document *text*,
-           not a screenshot: cheaper, and the model then cites page numbers
-           you can verify.
-        4. On the retry (``attempt == 2``), append the validation error to the
-           prompt — telling the model what it got wrong is worth far more
-           than asking it the same question twice.
-        5. Compute the real cost from the token counts the API returns and
-           return it. A cost you estimate is a cost you cannot cap.
+     prompt_path = os.path.join(
+            os.path.dirname(__file__),
+            "prompts",
+            f"{PROMPT_VERSION}.md",
+        )
 
-        Sanity check before you start: run the rule-based structurer on the
-        same document first. Every item it already gets right is an item you
-        do not need a model for.
-        """
-        raise NotImplementedError("ClaudeStructurer._call_model — see the docstring")
+     with open(prompt_path ,"r" , encoding="utf-8") as file:
+           prompt_template = file.read()
+
+     prompt = prompt_template.replace(
+           "<!-- The adapter inserts RawDocument.full_text here. -->",
+           document.full_text,
+       )
+
+     if attempt == 2:
+           if validation_error is None:
+               raise ValueError("retry attempt requires a validation error")
+
+           prompt += (
+               "\n\nYour previous response failed validation for this reason:\n"
+               f"{validation_error}\n"
+               "Return corrected JSON only."
+         )
+
+
+     client = anthropic.Anthropic(api_key=self.api_key)
+
+     response = client.messages.create(
+           model=self.model,
+           max_tokens=4096,
+           messages=[
+               {
+                   "role": "user",
+                   "content": prompt,
+               }
+           ],
+           output_config={
+               "format": {
+                   "type": "json_schema",
+                   "schema": OUTPUT_SCHEMA,
+               }
+           },
+       )
+
+     #EXTRACT THE JSON TEXT
+     raw_response = next(
+           block.text
+           for block in response.content
+           if block.type == "text"
+       )
+
+     #GET THE ACTUAL TOKEN COUNT
+     input_tokens = response.usage.input_tokens
+     output_tokens = response.usage.output_tokens
+
+     #CALCULATE THE COST
+     input_cost = (
+               Decimal(input_tokens) * Decimal("2.00") / Decimal("1000000")
+       )
+
+     output_cost = (
+               Decimal(output_tokens) * Decimal("10.00") / Decimal("1000000")
+       )
+
+     cost = input_cost + output_cost
+
+     return raw_response, cost
