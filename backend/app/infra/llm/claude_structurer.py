@@ -44,7 +44,13 @@ OUTPUT_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["item_code", "amount", "year"],
+                "required": [
+                    "item_code",
+                    "amount",
+                    "year",
+                    "source_page",
+                    "confidence",
+                ],
                 "properties": {
                     "item_code": {"type": "string", "pattern": "^[A-Z]{2}$"},
                     "amount": {"type": "string"},

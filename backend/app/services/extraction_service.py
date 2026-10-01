@@ -124,7 +124,7 @@ class ExtractionService:
             run.model = structured.model
             run.prompt_version = structured.prompt_version
             run.cost_usd = structured.cost_usd
-            run.fields = list(self._to_fields(run.id, structured))
+            run.fields , run.rejections  = self._to_fields(run.id, structured)
 
             if not run.fields:
                 raise ExtractionFailed("no usable item found in the document")
@@ -182,7 +182,7 @@ class ExtractionService:
                 return reader
         raise ExtractionFailed(f"no reader supports this file: {path}")
 
-    def _to_fields(self, run_id: str, structured) -> list[E.ExtractedField]:
+    def _to_fields(self, run_id: str, structured) -> tuple[list[E.ExtractedField] , list[E.ExtractionRejection]]:
         """Schema validation (FR-07), expressed as a filter.
 
         A malformed proposal is dropped, not repaired. Repairing it would be
@@ -190,24 +190,47 @@ class ExtractionService:
         checks is precisely the silent false positive the whole thesis is
         about.
 
-        *** YOUR EXERCISE ***: today a dropped item disappears without trace.
+
         Collect the rejections and attach them to the run, so the evaluation
         can distinguish "the model proposed nothing" from "the model proposed
         something unusable". Those are two different failure modes in the
         typology of dossier §19.3.
         """
         fields: list[E.ExtractedField] = []
+        rejections: list[E.ExtractionRejection] = []
+
         for item in structured.items:
             try:
                 amount = Amount(item.amount)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
+                rejections.append(
+                    E.ExtractionRejection(
+                        raw_item=item,
+                        reason=f"invalid amount: {exc}",
+                    )
+                )
                 continue
+
             try:
                 code = str(item.item_code).strip().upper()
                 if len(code) != 2 or not code.isalpha():
+                    rejections.append(
+                        E.ExtractionRejection(
+                            raw_item=item,
+                            reason=f"invalid item code",
+                        )
+                    )
                     continue
-            except Exception:  # noqa: BLE001
+
+            except Exception as exc:  # noqa: BLE001
+                rejections.append(
+                    E.ExtractionRejection(
+                        raw_item=item,
+                        reason=f"invalid item code: {exc}",
+                    )
+                )
                 continue
+
             fields.append(
                 E.ExtractedField(
                     item_code=code,
@@ -221,7 +244,7 @@ class ExtractionService:
                     status=E.PROPOSED,
                 )
             )
-        return fields
+        return fields , rejections
 
 
 def _utcnow():

@@ -89,6 +89,12 @@ class SourceDocument:
     is_scanned: bool | None = None
     uploaded_at: datetime = field(default_factory=_now)
 
+@dataclass
+class ExtractionRejection:
+    """A Model proposal that could not be converted into an ExtractedField"""
+
+    raw_item: object
+    reason: str
 
 @dataclass
 class ExtractedField:
@@ -165,6 +171,7 @@ class ExtractionRun:
     cost_usd: Decimal | None = None
     failure_reason: str | None = None
     fields: list[ExtractedField] = field(default_factory=list)
+    rejections: list[ExtractionRejection] = field(default_factory=list)
 
     def statement(self, year: str = "N") -> FinancialStatement:
         """The domain-facing view of this run: code -> Amount, nothing else."""
