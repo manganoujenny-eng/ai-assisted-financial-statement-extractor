@@ -24,6 +24,11 @@ class AnalysisService:
     def analyse(
         self, case: E.AnalysisCase, dataset: E.ValidatedDataset, author: str = "system"
     ) -> tuple[list[RatioResult], list[Interpretation]]:
+        if case.status not in {E.VALIDATED, E.ANALYSED}:
+            raise E.DomainError(
+                f"case {case.id}: analysis is not available while the case is "
+                f"{case.status}"
+            )
         statement = dataset.statement()
         results = compute_all(statement)
         interpretations = interpret_all(results)

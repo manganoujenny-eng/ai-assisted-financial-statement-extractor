@@ -1,18 +1,22 @@
 """Parameterised sentences with their thresholds.
 
-R1 is fully wired as the worked example. R2 to R5 have no threshold yet, on
-purpose: the dossier says the firm holds no usable reference dataset (§3.3,
-§20.2), and "an invented threshold would be worse than no threshold at all".
+R1 and R3 are wired with documented reference thresholds. R2, R4 and R5
+intentionally have no threshold: no sufficiently strong and
+context-appropriate reference was identified to justify a universal
+numerical benchmark for these ratios in the context of this project.
 
-So a ratio with no documented reference gets a factual sentence and no
-judgement. That is not a gap in the code — it is BR-14 doing its work, and
-it is one of the more defensible things in the whole project.
+A ratio without a documented reference still receives a factual sentence
+and no judgement. This is not a gap in the code: BR-14 deliberately
+prevents the system from applying an invented threshold.
 
-*** YOUR EXERCISE ***: for each of R2..R5, either find a threshold you can
-cite (a textbook, a professional body, the firm's own practice — and record
-the source in ``Threshold.source``), or leave it at NO_REFERENCE and say so
-in the thesis. Both are acceptable answers. Inventing a number is not.
+For R2, R4 and R5, the absence of a threshold must therefore be explained
+as a methodological decision in the thesis. The ratio remains fully
+calculated and reported; only the automatic threshold-based judgement is
+omitted.
+
+Inventing a numerical threshold is not an acceptable alternative.
 """
+
 
 from __future__ import annotations
 
@@ -51,10 +55,21 @@ THRESHOLDS: dict[str, Threshold | None] = {
         below_label="below the 1.0 reference",
         above_label="at or above the 1.0 reference",
     ),
-    "R2": None,  # TODO: find a citable reference, or leave it and say why
-    "R3": None,  # TODO
-    "R4": None,  # TODO
-    "R5": None,  # TODO
+    "R2": None,
+    "R3": Threshold(
+        value=Decimal("1.0"),
+        source=(
+            "Reference selected after comparison of multiple documented "
+            "financial-analysis and prudential sources. The coverage of "
+            "stable uses by stable resources is expected to reach at least "
+            "100%. The prototype applies this reference to stable resources "
+            "(equity plus financial debt) divided by net fixed assets."
+        ),
+        below_label="below the 1.0 coverage reference",
+        above_label="at or above the 1.0 coverage reference",
+    ),
+    "R4": None,
+    "R5": None ,
 }
 
 

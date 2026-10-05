@@ -121,14 +121,19 @@ class ValidationService:
         return dataset
 
     # --- §15, reopening -------------------------------------------------
-    def reopen(self, case: E.AnalysisCase, author: str, reason: str) -> None:
-        """Permitted, but traced — and it invalidates the computed results.
+    def reopen(self, case, author, reason):
+        """Reopen an analysed case for correction and review.
 
-        *** YOUR EXERCISE ***: the computed ratios are not invalidated yet.
-        Decide what "invalidate" means concretely (delete the RatioResults?
-        mark them stale? keep them with a pointer to the dataset that no
-        longer exists?) and implement it. Write your reasoning down: it is a
-        genuine design question, and there is no single right answer.
+        Reopening moves the case from ANALYSED to UNDER_REVIEW. In the current
+        architecture, this is how the previous analysis is invalidated: analysis
+        is no longer allowed while the case is under review.
+
+        The ValidatedDataset is kept as a historical snapshot and is not deleted
+        or modified. After corrections are reviewed and the case is validated
+        again, the analysis can be recomputed from the validated data.
+
+        The reopening is recorded in the append-only audit log so that the
+        correction workflow remains traceable.
         """
         case.transition_to(E.UNDER_REVIEW)
         self.audit.record(

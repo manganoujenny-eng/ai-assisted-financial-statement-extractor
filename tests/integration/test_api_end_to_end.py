@@ -90,6 +90,12 @@ def test_the_whole_chain(client):
     assert len(document["sha256"]) == 64  # the cache key of NFR-08
     document_id = document["id"]
 
+    #--------------serve the original source document------------------------
+    response = client.get(f"/api/documents/{document_id}/file")
+    assert response.status_code == 200
+    assert  response.content_type == "application/pdf"
+    assert response.data == b"%PDF-1.7 not really a pdf"
+
     # --- UC-03, extract --------------------------------------------------
     response = client.post(f"/api/documents/{document_id}/extractions")
     assert response.status_code == 201

@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from decimal import Decimal
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request ,send_file
 from werkzeug.utils import secure_filename
 
 from ..domain import entities as E
@@ -99,6 +99,28 @@ def upload_document(case_id: str):
     document = c.extraction.register_document(case, target)
     c.cases.save(case)
     return jsonify(document_json(document)), 201
+
+@bp.get("/documents/<document_id>/file")
+def get_document_file(document_id: str):
+    """GET /api/documents/{id}/file — serve the original source document.
+
+        The review interface uses this endpoint to display the original document
+        beside the extracted financial data.
+        """
+    document = _need(container().documents.get(document_id), document_id)
+
+    if not document.stored_path:
+        raise ValueError("document has no stored file")
+
+    if not os.path.isfile(document.stored_path):
+        raise FileNotFoundError(document.stored_path)
+
+    return send_file(
+        document.stored_path,
+        mimetype="application/pdf",
+        download_name=document.file_name,
+        as_attachment=False
+    )
 
 
 # ==========================================================================
