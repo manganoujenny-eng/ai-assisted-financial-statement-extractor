@@ -27,8 +27,20 @@ from decimal import Decimal
 
 from ...domain.ports import AnalysisDraft
 
-PROMPT_VERSION = "analysis-v2"
-PROMPT_FILE = "analysis_v2.md"
+#: v3: the model judges the values with its own professional knowledge (no
+#: thresholds from the code), says what is going wrong and why, and adds
+#: concrete recommendations for management ("diagnosis", "recommendations").
+PROMPT_VERSION = "analysis-v3"
+PROMPT_FILE = "analysis_v3.md"
+REQUIRED_KEYS = (
+    "overview",
+    "diagnosis",
+    "ratios",
+    "checks",
+    "comparison",
+    "recommendations",
+    "attention",
+)
 PLACEHOLDER = "<!-- The adapter inserts the payload JSON here. -->"
 LANGUAGE_PLACEHOLDER = "{{LANGUAGE}}"
 
@@ -153,7 +165,7 @@ class ClaudeAnalyst:
             data = json.loads(cleaned[start : end + 1])
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid JSON: {exc}") from exc
-        missing = [k for k in ("overview", "ratios", "checks", "comparison", "attention") if k not in data]
+        missing = [k for k in REQUIRED_KEYS if k not in data]
         if missing:
             raise ValueError(f"missing keys: {', '.join(missing)}")
         return data

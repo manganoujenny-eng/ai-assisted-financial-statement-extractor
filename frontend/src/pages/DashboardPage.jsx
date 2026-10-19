@@ -10,7 +10,9 @@ import { Link, useParams } from 'react-router-dom'
 import * as api from '../api/client.js'
 import ChecksPanel from '../components/ChecksPanel.jsx'
 import AiCommentaryPanel from '../components/AiCommentaryPanel.jsx'
+import { KeyFigures, RatioComparison } from '../components/YearComparisonChart.jsx'
 import { labelByCode, useI18n } from '../i18n/index.jsx'
+import { interpretationText, reasonText, referenceSourceText } from '../i18n/interpretation.js'
 
 function RatioCard({ ratio, onViewDetails }) {
   const { t } = useI18n()
@@ -48,7 +50,7 @@ function RatioCard({ ratio, onViewDetails }) {
 
       {!computed && (
         <p className="ratio-reason">
-          {ratio.reason || t('dash.cannotCompute')}
+          {reasonText(t, ratio.reason) || t('dash.cannotCompute')}
         </p>
       )}
 
@@ -116,7 +118,7 @@ function RatioDetails({ ratio, onClose }) {
         <div className="banner info">
           <strong>{t('dash.whyUnavailable')}</strong>
           <p>
-            {ratio.reason || t('dash.noReason')}
+            {reasonText(t, ratio.reason) || t('dash.noReason')}
           </p>
         </div>
       )}
@@ -188,12 +190,12 @@ function RatioDetails({ ratio, onClose }) {
                     : t('ratioStatus.NOT_COMPUTABLE')}
                 </p>
 
-                <p>{interpretation.text || t('dash.noInterpretationText')}</p>
+                <p>{interpretationText(t, ratio) || t('dash.noInterpretationText')}</p>
 
                 {interpretation.reference_source && (
                   <p>
                     <strong>{t('dash.referenceApplied')}</strong>{' '}
-                    {interpretation.reference_source}
+                    {referenceSourceText(t, ratio)}
                   </p>
                 )}
               </div>
@@ -207,8 +209,9 @@ function RatioDetails({ ratio, onClose }) {
 
 function YearComparison({ data }) {
   /*
-   * Only display a comparison if the API explicitly provides one.
-   * The current dashboard response does not contain a comparison object.
+   * Shown when the API provides a comparison: Year N-1 from the same
+   * validated package, or a validated case of the same client for the
+   * previous year. Charts first; the same figures as a table underneath.
    */
   const comparison = data.year_comparison
   const { t } = useI18n()
@@ -230,28 +233,39 @@ function YearComparison({ data }) {
             })}
           </p>
 
-          <div className="cases-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('myCases.ratio')}</th>
-                  <th className="num">{t('dash.currentYear')}</th>
-                  <th className="num">{t('dash.previousYear')}</th>
-                  <th className="num">{t('dash.change')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(comparison.ratios || []).map((item) => (
-                  <tr key={item.code}>
-                    <td>{labelByCode(t, 'ratio', item.code, item.name || item.code)}</td>
-                    <td className="num">{item.current_value ?? '—'}</td>
-                    <td className="num">{item.previous_value ?? '—'}</td>
-                    <td className="num">{item.change ?? '—'}</td>
+          <RatioComparison comparison={comparison} />
+
+          <KeyFigures
+            dataset={data.dataset}
+            previousYear={comparison.previous_year}
+            currentYear={comparison.current_year}
+          />
+
+          <details className="yc-table">
+            <summary>{t('dash.chartAsTable')}</summary>
+            <div className="cases-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('myCases.ratio')}</th>
+                    <th className="num">{t('dash.currentYear')}</th>
+                    <th className="num">{t('dash.previousYear')}</th>
+                    <th className="num">{t('dash.change')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {(comparison.ratios || []).map((item) => (
+                    <tr key={item.code}>
+                      <td>{labelByCode(t, 'ratio', item.code, item.name || item.code)}</td>
+                      <td className="num">{item.current_value ?? '—'}</td>
+                      <td className="num">{item.previous_value ?? '—'}</td>
+                      <td className="num">{item.change ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </>
       )}
     </section>

@@ -2,16 +2,20 @@
  * case's documents and writing the AI analysis. Both can take minutes, and
  * without this the analyst sees nothing happen and clicks again.
  *
- * It listens for the "long-task" events api/client.js sends around those
- * calls, so no page has to manage it. While it is shown:
- *   - the whole app is covered, so nothing can be clicked twice;
- *   - a timer shows the time spent, so "still working" is visible;
- *   - closing or reloading the tab asks for confirmation first.
+ * It listens for the events api/client.js sends around those calls, so no
+ * page has to manage it:
+ *   - "long-task": something started or finished. While it runs the whole
+ *     app is covered (nothing can be clicked twice), the time spent is shown
+ *     against the time limit on a timeline, and closing the tab asks first.
+ *   - "long-task-timeout": the time limit (api/client.js TIME_LIMITS_MS)
+ *     passed. The page stopped waiting; the overlay turns into an error
+ *     with "Reload the page" and "Close", instead of loading for ever.
  *
  * Its few texts live here, in both languages, so en.js / fr.js stay as they are.
  */
 
 import { useEffect, useState } from 'react'
+import { TIME_LIMITS_MS } from '../api/client.js'
 import { useI18n } from '../i18n/index.jsx'
 import { BrandSymbol } from './BrandMark.jsx'
 
@@ -20,27 +24,45 @@ const TEXTS = {
     extraction: 'Extraction in progress',
     extractionHint:
       'The documents are being read and the accounting items extracted. ' +
-      'With Claude this usually takes 1 to 5 minutes, longer for scanned files.',
+      'A typed PDF or an Excel file takes a few seconds; scanned pages are read ' +
+      'by OCR and can take several minutes for a large package.',
     analysis: 'Analysis in progress',
-    analysisHint: 'The ratios are computed and the AI commentary is being written. This can take a minute or two.',
+    analysisHint:
+      'The ratios are computed and Claude is writing the AI commentary. This can take a minute or two.',
     keepOpen: 'Keep this page open. It will continue by itself when the work is done.',
     elapsed: 'Elapsed',
+    limit: 'time limit',
+    timeoutTitle: 'This is taking too long',
+    reload: 'Reload the page',
+    close: 'Close',
   },
   fr: {
     extraction: 'Extraction en cours',
     extractionHint:
       'Les documents sont lus et les postes comptables extraits. ' +
-      'Avec Claude cela prend en général 1 à 5 minutes, plus pour les fichiers scannés.',
+      'Un PDF texte ou un fichier Excel prend quelques secondes ; les pages scannées ' +
+      'sont lues par OCR et peuvent prendre plusieurs minutes pour un gros dossier.',
     analysis: 'Analyse en cours',
-    analysisHint: "Les ratios sont calculés et le commentaire IA est rédigé. Cela peut prendre une ou deux minutes.",
+    analysisHint:
+      "Les ratios sont calculés et Claude rédige le commentaire IA. Cela peut prendre une ou deux minutes.",
     keepOpen: 'Gardez cette page ouverte. Elle continuera toute seule une fois le travail terminé.',
     elapsed: 'Temps écoulé',
+    limit: 'limite',
+    timeoutTitle: 'Cela prend trop de temps',
+    reload: 'Recharger la page',
+    close: 'Fermer',
   },
+}
+
+const clock = (ms) => {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 export default function BusyOverlay() {
   const { lang } = useI18n()
   const [task, setTask] = useState(null) // { kind, startedAt } while something runs
+  const [timeout, setTimeoutInfo] = useState(null) // { kind, message } after the limit
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -51,13 +73,19 @@ export default function BusyOverlay() {
         return null
       })
     }
+    const onTimeout = (event) => setTimeoutInfo(event.detail || {})
     window.addEventListener('long-task', onTask)
-    return () => window.removeEventListener('long-task', onTask)
+    window.addEventListener('long-task-timeout', onTimeout)
+    return () => {
+      window.removeEventListener('long-task', onTask)
+      window.removeEventListener('long-task-timeout', onTimeout)
+    }
   }, [])
 
-  // The timer, and a warning if the tab is closed mid-way.
+  // The clock, and a warning if the tab is closed mid-way.
   useEffect(() => {
     if (!task) return undefined
+    setTimeoutInfo(null)
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     const onLeave = (event) => {
@@ -71,11 +99,35 @@ export default function BusyOverlay() {
     }
   }, [task])
 
+  const text = TEXTS[lang] || TEXTS.en
+
+  // --- the time limit passed: an error the user can act on ---------------
+  if (timeout && !task) {
+    return (
+      <div className="busy-scrim" role="alertdialog" aria-modal="true" aria-labelledby="busy-timeout-title">
+        <div className="busy-card busy-timeout">
+          <div className="dialog-icon busy-timeout-icon" aria-hidden="true">⏱</div>
+          <h2 id="busy-timeout-title">{text.timeoutTitle}</h2>
+          <p className="muted">{timeout.message}</p>
+          <div className="busy-actions">
+            <button type="button" onClick={() => setTimeoutInfo(null)}>
+              {text.close}
+            </button>
+            <button type="button" className="primary" onClick={() => window.location.reload()}>
+              {text.reload}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!task) return null
 
-  const text = TEXTS[lang] || TEXTS.en
-  const seconds = Math.max(0, Math.floor((now - task.startedAt) / 1000))
-  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  // --- still running: the timeline from 0 to the time limit ---------------
+  const limit = TIME_LIMITS_MS[task.kind] || 5 * 60 * 1000
+  const spent = now - task.startedAt
+  const share = Math.min(100, (spent / limit) * 100)
   const isExtraction = task.kind === 'extraction'
 
   return (
@@ -87,9 +139,19 @@ export default function BusyOverlay() {
         </div>
         <h2>{isExtraction ? text.extraction : text.analysis}</h2>
         <p className="muted">{isExtraction ? text.extractionHint : text.analysisHint}</p>
-        <div className="busy-bar" aria-hidden="true"><span /></div>
+        <div
+          className={`busy-timeline${share > 80 ? ' late' : ''}`}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(limit / 1000)}
+          aria-valuenow={Math.round(spent / 1000)}
+          aria-label={text.elapsed}
+        >
+          <span style={{ width: `${share}%` }} />
+        </div>
         <p className="busy-elapsed">
-          {text.elapsed} <strong className="num">{elapsed}</strong>
+          {text.elapsed} <strong className="num">{clock(spent)}</strong>
+          <span className="faint"> / {text.limit} {clock(limit)}</span>
         </p>
         <p className="faint busy-keep">{text.keepOpen}</p>
       </div>

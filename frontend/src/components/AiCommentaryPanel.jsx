@@ -1,4 +1,4 @@
-/* AI commentary on the validated analysis (item 4).
+/* AI commentary on the validated analysis .
  *
  * The figures, checks, ratios and their template sentences above this panel
  * are rule-based. This panel holds what the language model wrote ABOUT
@@ -11,6 +11,11 @@
  *
  * The model's original text is kept by the backend whatever the analyst
  * changes, so the edits stay measurable.
+ *
+ * Since prompt v3 the model reads the values as an advisor would for the
+ * company's management: a diagnosis of what is going wrong and why, and
+ * concrete recommendations. A commentary written before v3 has neither;
+ * those two blocks are then simply not shown.
  */
 
 import { useEffect, useState } from 'react'
@@ -22,25 +27,32 @@ function toForm(sections, ratios) {
   const byCode = s.ratios || {}
   return {
     overview: s.overview || '',
+    diagnosis: s.diagnosis || '',
     ratios: Object.fromEntries(ratios.map((ratio) => [ratio.code, byCode[ratio.code] || ''])),
     checks: s.checks || '',
     comparison: s.comparison || '',
+    recommendations: (s.recommendations || []).join('\n'),
     attention: (s.attention || []).join('\n'),
   }
 }
 
+const lines = (text) =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+
 function fromForm(form) {
   return {
     overview: form.overview,
+    diagnosis: form.diagnosis,
     ratios: Object.fromEntries(
       Object.entries(form.ratios).filter(([, text]) => text.trim())
     ),
     checks: form.checks,
     comparison: form.comparison,
-    attention: form.attention
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean),
+    recommendations: lines(form.recommendations),
+    attention: lines(form.attention),
   }
 }
 
@@ -57,6 +69,16 @@ function Block({ title, children }) {
 
 function Text({ value }) {
   return <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{value || '—'}</p>
+}
+
+function Points({ items }) {
+  return (
+    <ul style={{ margin: 0 }}>
+      {items.map((point, index) => (
+        <li key={index}>{point}</li>
+      ))}
+    </ul>
+  )
 }
 
 function Area({ value, onChange, rows = 3, disabled }) {
@@ -198,6 +220,11 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
               onChange={(value) => setForm({ ...form, overview: value })} />
           </Block>
 
+          <Block title={t('ai.diagnosis')}>
+            <Area value={form.diagnosis} rows={5} disabled={busy}
+              onChange={(value) => setForm({ ...form, diagnosis: value })} />
+          </Block>
+
           {ratios.map((ratio) => (
             <Block key={ratio.code} title={`${ratio.code} — ${ratioName(ratio.code)}`}>
               <Area
@@ -218,6 +245,11 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
           <Block title={t('ai.comparison')}>
             <Area value={form.comparison} disabled={busy}
               onChange={(value) => setForm({ ...form, comparison: value })} />
+          </Block>
+
+          <Block title={t('ai.recommendationsEdit')}>
+            <Area value={form.recommendations} rows={5} disabled={busy}
+              onChange={(value) => setForm({ ...form, recommendations: value })} />
           </Block>
 
           <Block title={t('ai.attentionEdit')}>
@@ -251,6 +283,9 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
           </p>
 
           <Block title={t('ai.overview')}><Text value={analysis.sections?.overview} /></Block>
+          {analysis.sections?.diagnosis && (
+            <Block title={t('ai.diagnosis')}><Text value={analysis.sections.diagnosis} /></Block>
+          )}
           {ratios
             .filter((ratio) => analysis.sections?.ratios?.[ratio.code])
             .map((ratio) => (
@@ -262,13 +297,14 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
           <Block title={t('ai.comparison')}>
             <Text value={analysis.sections?.comparison} />
           </Block>
+          {(analysis.sections?.recommendations || []).length > 0 && (
+            <Block title={t('ai.recommendations')}>
+              <Points items={analysis.sections.recommendations} />
+            </Block>
+          )}
           {(analysis.sections?.attention || []).length > 0 && (
             <Block title={t('ai.attention')}>
-              <ul style={{ margin: 0 }}>
-                {analysis.sections.attention.map((point, index) => (
-                  <li key={index}>{point}</li>
-                ))}
-              </ul>
+              <Points items={analysis.sections.attention} />
             </Block>
           )}
         </>

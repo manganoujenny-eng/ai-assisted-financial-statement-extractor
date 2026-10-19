@@ -294,14 +294,15 @@ class ValidationService:
         run: E.ExtractionRun,
         author: str,
         note: str = "",
+        supervisor: str | None = None,
     ) -> None:
         """The analyst hands the case to the supervisor for validation.
 
-        Allowed from EXTRACTED (nothing needed correcting) and UNDER_REVIEW
-        (after a correction request). The run submitted must be the case's
-        newest one and must have finished: the supervisor validates exactly
-        what the analyst looked at. The SUBMITTED audit entry is what puts
-        the case in the supervisor's notifications.
+        ``supervisor`` is the supervisor the analyst assigns the case to:
+        only that person is notified, sees it in "Waiting for validation",
+        and may validate it or send it back (the API enforces it). It is
+        kept in the SUBMITTED audit entry, so a new submission can go to
+        another supervisor and no database column is needed.
         """
         if case.status not in {E.EXTRACTED, E.UNDER_REVIEW}:
             raise E.DomainError(
@@ -322,7 +323,11 @@ class ValidationService:
                 entity_id=case.id,
                 action="SUBMITTED",
                 author=author,
-                detail={"extraction_id": run.id, "note": (note or "").strip()},
+                detail={
+                    "extraction_id": run.id,
+                    "note": (note or "").strip(),
+                    "supervisor": (supervisor or "").strip() or None,
+                },
             )
         )
 

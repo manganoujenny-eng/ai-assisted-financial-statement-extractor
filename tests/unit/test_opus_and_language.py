@@ -21,12 +21,13 @@ from app.infra.llm.claude_structurer import ClaudeStructurer
 
 SECTIONS = {
     "overview": "Vue d'ensemble.",
+    "diagnosis": "Diagnostic.",
     "ratios": [{"code": "R1", "commentary": "Commentaire."}],
     "checks": "Contrôles.",
     "comparison": "Aucune comparaison.",
+    "recommendations": ["Action."],
     "attention": ["Point."],
 }
-
 
 def _response(text, stop_reason="end_turn"):
     response = Mock()
@@ -58,7 +59,7 @@ def test_analyst_writes_in_the_requested_language_and_sends_no_sampling_params()
     prompt = kwargs["messages"][0]["content"]
     assert "Write every text value in French" in prompt
     assert '"language"' not in prompt  # not a figure, not sent as one
-    assert draft.prompt_version == "analysis-v2/fr"
+    assert draft.prompt_version == "analysis-v3/fr"
     # $4 in + $20 out per million tokens: 1M in + 0.1M out = 6.00
     assert draft.cost_usd == Decimal("6.00")
 
@@ -69,7 +70,7 @@ def test_analyst_unknown_language_falls_back_to_english():
         client.return_value.messages.create.return_value = _response(json.dumps(SECTIONS))
         draft = analyst.write({"ratios": [], "language": "xx"})
     assert "in English" in client.return_value.messages.create.call_args.kwargs["messages"][0]["content"]
-    assert draft.prompt_version == "analysis-v2/en"
+    assert draft.prompt_version == "analysis-v3/en"
 
 
 def test_analyst_refusal_is_an_explicit_failure():
@@ -112,7 +113,7 @@ class _Writer:
         return AnalysisDraft(
             sections={k: v for k, v in SECTIONS.items() if k != "ratios"} | {"ratios": []},
             model="m",
-            prompt_version=f"analysis-v2/{payload.get('language')}",
+            prompt_version=f"analysis-v3/{payload.get('language')}",
             cost_usd=Decimal("0"),
         )
 
@@ -154,3 +155,45 @@ def test_commentary_language_follows_the_screen(app_with_writer):
     ).get_json()
     assert writer.payloads[-1]["language"] == "en"
     assert again["language"] == "en"
+
+
+
+def test_analyst_v3_needs_diagnosis_and_recommendations():
+    analyst = ClaudeAnalyst(api_key="k", model="claude-opus-5-5")
+    old_shape = {k: v for k, v in SECTIONS.items() if k not in ("diagnosis", "recommendations")}
+    with patch("anthropic.Anthropic") as client:
+        client.return_value.messages.create.return_value = _response(json.dumps(old_shape))
+        with pytest.raises(ValueError, match="diagnosis"):
+            analyst.write({"ratios": [], "language": "en"})
+    # One retry, then the explicit failure.
+    assert client.return_value.messages.create.call_count == 2
+
+
+def test_payload_sends_values_not_the_codes_thresholds():
+    from app.services.insight_service import build_payload
+
+    ratio = {
+        "code": "R1",
+        "name": "Current ratio",
+        "status": "COMPUTED",
+        "value": "0.80",
+        "unit": "x",
+        "interpretation": {"text": "Template sentence.", "threshold_applied": "1.0"},
+    }
+    payload = build_payload({"BK": "800"}, {}, [ratio], [], None)
+    sent = payload["ratios"][0]
+    assert sent["value"] == "0.80"
+    assert "template_interpretation" not in sent
+    assert "documented_threshold" not in sent
+    assert "Template sentence." not in json.dumps(payload)
+
+
+def test_old_commentary_reads_back_with_empty_new_sections():
+    from app.services.insight_service import clean_sections
+
+    cleaned = clean_sections(
+        {"overview": "o", "ratios": {}, "checks": "c", "comparison": "x", "attention": ["a"]}
+    )
+    assert cleaned["diagnosis"] == ""
+    assert cleaned["recommendations"] == []
+    assert cleaned["attention"] == ["a"]

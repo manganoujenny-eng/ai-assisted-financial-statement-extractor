@@ -114,6 +114,9 @@ export default function ReviewPage() {
   const [history, setHistory] = useState([])
   const [submitNote, setSubmitNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // The supervisors a case can be submitted to, and the one chosen.
+  const [supervisors, setSupervisors] = useState([])
+  const [submitTo, setSubmitTo] = useState('')
   // The supervisor's "send back" dialog: null = closed.
   const [correctionRequest, setCorrectionRequest] = useState(null)
 
@@ -147,6 +150,18 @@ export default function ReviewPage() {
   useEffect(() => {
     reload()
   }, [caseId, extractionId])
+
+  // An analyst assigns the submission to one supervisor: load the list.
+  useEffect(() => {
+    if (api.isSupervisor()) return
+    api
+      .listSupervisors()
+      .then((list) => {
+        setSupervisors(list)
+        if (list.length === 1) setSubmitTo(list[0].full_name)
+      })
+      .catch(() => setSupervisors([]))
+  }, [])
 
   // Every document this run was actually built from, in the case's own
   // attach order — a run can span several documents now, not just one.
@@ -230,9 +245,6 @@ export default function ReviewPage() {
   const canSubmit =
     canEdit && data?.extraction?.status === 'EXTRACTED' && (data?.fields?.length || 0) > 0
   const canSupervise = supervisor
-  const canValidate = canSupervise && status === 'SUBMITTED'
-  const canRequestCorrection =
-    canSupervise && ['SUBMITTED', 'VALIDATED', 'ANALYSED'].includes(status)
 
   const lastEvent = history.length > 0 ? history[history.length - 1] : null
   const pendingRequest =
@@ -243,6 +255,24 @@ export default function ReviewPage() {
     status === 'SUBMITTED'
       ? [...history].reverse().find((event) => event.action === 'SUBMITTED') || null
       : null
+
+
+  // Only the supervisor a submission was assigned to may validate it or
+  // send it back; once validated, only the supervisor who validated it may
+  // send it back. Someone no longer active releases the case to everyone.
+  // The backend enforces the same rules (403).
+  // "supervisor_now" is that person's current name (it follows a rename on
+  // My account); null when they are no longer an active supervisor.
+  const assignedTo = lastSubmission?.supervisor_now || null
+  const lastValidation = [...history].reverse().find((event) => event.action === 'VALIDATED')
+  const validatedBy = lastValidation?.supervisor_now || null
+  const isMine = (name) => authOff || !name || sameName(name, user?.full_name)
+  const canValidate = canSupervise && status === 'SUBMITTED' && isMine(assignedTo)
+  const canRequestCorrection =
+    canSupervise &&
+    ((status === 'SUBMITTED' && isMine(assignedTo)) ||
+      (['VALIDATED', 'ANALYSED'].includes(status) && isMine(validatedBy)))
+  const assignedToSomeoneElse = canSupervise && status === 'SUBMITTED' && !isMine(assignedTo)
 
   /*
    * Find checks which mention the selected item.
@@ -377,10 +407,14 @@ export default function ReviewPage() {
       caseData?.status === 'VALIDATED' || caseData?.status === 'ANALYSED'
 
   async function onSubmit() {
+    if (supervisors.length > 0 && !submitTo) {
+      setError(t('assign.required'))
+      return
+    }
     try {
       setSubmitting(true)
       setError(null)
-      await api.submitCase(caseId, submitNote.trim())
+      await api.submitCase(caseId, submitNote.trim(), submitTo)
       setSubmitNote('')
       await reload()
       window.dispatchEvent(new Event('notifications-changed'))
@@ -568,6 +602,11 @@ export default function ReviewPage() {
               date: formatDate(lastSubmission.at, locale),
             })}
           </strong>
+          {lastSubmission.supervisor && (
+            <div style={{ marginTop: 4 }}>
+              {t('assign.assignedTo', { name: lastSubmission.supervisor })}
+            </div>
+          )}
           {lastSubmission.message && (
             <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{lastSubmission.message}</div>
           )}
@@ -580,13 +619,19 @@ export default function ReviewPage() {
       {needsReopen && canSupervise && (
         <div className="banner warn review-banner">
           <strong>{t('review.alreadyValidated')}</strong>{' '}
-          {t('workflow.sendBackValidatedHint')}{' '}
-          <button
-            className="primary"
-            onClick={() => setCorrectionRequest({ message: '', working: false, error: null })}
-          >
-            {t('workflow.requestCorrection')}
-          </button>
+          {canRequestCorrection ? (
+            <>
+              {t('workflow.sendBackValidatedHint')}{' '}
+              <button
+                className="primary"
+                onClick={() => setCorrectionRequest({ message: '', working: false, error: null })}
+              >
+                {t('workflow.requestCorrection')}
+              </button>
+            </>
+          ) : (
+            t('assign.validatorOnly', { name: validatedBy })
+          )}
         </div>
       )}
 
@@ -1213,6 +1258,24 @@ export default function ReviewPage() {
                 <>
                   <strong>{t('workflow.submitTitle')}</strong>{' '}
                   {t('workflow.submitHint')}
+                  {supervisors.length > 0 && (
+                    <label className="assign-field">
+                      <span>{t('assign.label')}</span>
+                      <select
+                        value={submitTo}
+                        disabled={submitting}
+                        onChange={(event) => setSubmitTo(event.target.value)}
+                        required
+                      >
+                        <option value="">{t('assign.choose')}</option>
+                        {supervisors.map((item) => (
+                          <option key={item.username} value={item.full_name}>
+                            {item.full_name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <textarea
                     rows={2}
                     style={{ display: 'block', width: '100%', marginTop: 8 }}
@@ -1233,6 +1296,11 @@ export default function ReviewPage() {
                   {t('review.bySupervisorHint')}
                 </>
               )
+            ) : assignedToSomeoneElse ? (
+              <>
+                <strong>{t('assign.otherTitle', { name: assignedTo })}</strong>{' '}
+                {t('assign.otherHint')}
+              </>
             ) : !canValidate ? (
               <>
                 <strong>{t('workflow.notSubmittedTitle')}</strong>{' '}
@@ -1261,7 +1329,11 @@ export default function ReviewPage() {
               disabled={submitting}
               onClick={onSubmit}
             >
-              {submitting ? t('workflow.submitting') : t('workflow.submit')}
+                            {submitting
+                ? t('workflow.submitting')
+                : submitTo
+                ? t('assign.submitTo', { name: submitTo })
+                : t('workflow.submit')}
             </button>
           )}
 

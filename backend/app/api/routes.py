@@ -18,6 +18,7 @@ from decimal import Decimal
 from ..infra.export.spreadsheet import export_analysis
 
 from flask import Blueprint, current_app, jsonify, request ,send_file
+from werkzeug.exceptions import Forbidden
 from werkzeug.utils import secure_filename
 from dataclasses import replace
 
@@ -158,6 +159,16 @@ def list_cases():
             payload["extractions"] = [
                 run_json(run, fields=False) for run in c.extractions.list_for_case(case.id)
             ]
+            # Who the case is waiting for, and who validated its current
+            # result: the Cases page shows a supervisor's buttons from these.
+            payload["assigned_supervisor"] = (
+                _assigned_supervisor(c, case) if case.status == E.SUBMITTED else None
+            )
+            _run, current = _latest_validated_dataset(c, case)
+            payload["validated_by"] = current.validated_by if current else None
+            # The same, but only while that person is an active supervisor:
+            # they alone may delete it or send it back (None = anyone).
+            payload["validator"] = _validator(c, case)
 
             result.append(payload)
 
@@ -209,6 +220,9 @@ def delete_case(case_id: str):
     role = actor_role(payload.get("role"))
     if role != "supervisor":
         require_case_owner(case)
+    else:
+        # A supervisor deletes only a result they validated themselves.
+        _require_validator(c, case, "delete it")
     # CaseService decides the rest: an analyst deletes nothing validated,
     # a supervisor deletes ANALYSED cases only.
     c.case_management.delete_case(
@@ -477,6 +491,7 @@ def validate(run_id: str):
     payload = request.get_json(silent=True) or {}
     run = _need(c.extractions.get(run_id), run_id)
     case = _need(c.cases.get(run.case_id), run.case_id)
+    _require_assignee(c, case, "validate it")
 
     dataset = c.validation.validate(
         case,
@@ -546,7 +561,11 @@ def submit_case(case_id: str):
     runs = c.extractions.list_for_case(case.id)
     run = _need(runs[-1] if runs else None, f"extraction for case {case_id}")
     c.validation.submit(
-        case, run, author=actor(payload.get("author")), note=str(payload.get("note") or "")
+        case,
+        run,
+        author=actor(payload.get("author")),
+        note=str(payload.get("note") or ""),
+        supervisor=_chosen_supervisor(c, payload.get("supervisor")),
     )
     c.cases.save(case)
     return jsonify(case_json(case)), 200
@@ -567,9 +586,11 @@ def request_correction(case_id: str):
     payload = request.get_json(silent=True) or {}
 
     if case.status == E.SUBMITTED:
+        _require_assignee(c, case, "send it back")
         runs = c.extractions.list_for_case(case.id)
         run = runs[-1] if runs else None
     else:
+        _require_validator(c, case, "send it back")
         run, _dataset = _latest_validated_dataset(c, case)
     run = _need(run, f"extraction for case {case_id}")
 
@@ -585,16 +606,28 @@ def request_correction(case_id: str):
 
 def _workflow_history(c, case: E.AnalysisCase) -> list[dict]:
     """Submissions, correction requests, reopenings and validations of one
-    case, oldest first — read from the audit log and the datasets."""
+    case, oldest first — read from the audit log and the datasets.
+
+    ``supervisor`` (SUBMITTED) is who the analyst assigned it to;
+    ``supervisor_active`` says whether that person — or, on VALIDATED, the
+    validator — is still an active supervisor, i.e. whether the
+    assigned-only / validator-only rules still apply (see _assigned_supervisor).
+    """
+    active = _active_supervisors(c)
     entries = [
         {
             "action": entry.action,
             "author": entry.author,
             "at": entry.at.isoformat(),
             "message": (entry.detail or {}).get("message")
-            or (entry.detail or {}).get("note")
-            or (entry.detail or {}).get("reason")
-            or None,
+                       or (entry.detail or {}).get("note")
+                       or (entry.detail or {}).get("reason")
+                       or None,
+            # SUBMITTED only: the supervisor the analyst assigned it to,
+            # as recorded, and that person's current name if still active.
+            "supervisor": (entry.detail or {}).get("supervisor"),
+            "supervisor_active": _norm((entry.detail or {}).get("supervisor")) in active,
+            "supervisor_now": active.get(_norm((entry.detail or {}).get("supervisor"))),
         }
         for entry in c.audit.list_for("AnalysisCase", case.id)
         if entry.action in WORKFLOW_ACTIONS
@@ -607,6 +640,9 @@ def _workflow_history(c, case: E.AnalysisCase) -> list[dict]:
                     "author": dataset.validated_by,
                     "at": dataset.validated_at.isoformat(),
                     "message": None,
+                    "supervisor": None,
+                    "supervisor_active": _norm(dataset.validated_by) in active,
+                    "supervisor_now": active.get(_norm(dataset.validated_by)),
                 }
             )
     entries.sort(key=lambda item: item["at"])
@@ -621,6 +657,112 @@ def case_history(case_id: str):
     case = _need(c.cases.get(case_id), case_id)
     return jsonify(_workflow_history(c, case))
 
+# --- who validates, who deletes --------------------------------------------
+# The analyst assigns a submitted case to one supervisor; only that person is
+# notified and may validate it or send it back. Once validated, only the
+# supervisor who validated it may send it back or delete it. If that person
+# is no longer an active supervisor (left, deactivated, renamed), the case
+# is open to every supervisor again, so nothing can get stuck.
+def _norm(name: str | None) -> str:
+    return " ".join((name or "").split()).casefold()
+
+
+def _active_supervisors(c) -> dict[str, str]:
+    """Every name an active supervisor is known by -> their current name.
+
+    Records keep the name in force when they were written (a validation
+    signed "Paul Mbarga" stays signed "Paul Mbarga"). If that supervisor
+    later renamed themselves on My account, their former names come from
+    the audit trail of their account (USER_UPDATED, full_name [old, new]),
+    so the cases they were assigned or validated under the old name still
+    belong to them: nothing opens up to the other supervisors.
+    """
+    names: dict[str, str] = {}
+    for u in c.users.list():
+        if not (u.is_supervisor and u.active):
+            continue
+        names[_norm(u.full_name)] = u.full_name
+        for entry in c.audit.list_for("User", u.id):
+            renamed = (entry.detail or {}).get("full_name") if entry.action == "USER_UPDATED" else None
+            if isinstance(renamed, (list, tuple)) and len(renamed) == 2:
+                names.setdefault(_norm(renamed[0]), u.full_name)
+    return names
+
+
+def _assigned_supervisor(c, case: E.AnalysisCase) -> str | None:
+    """The active supervisor the latest submission went to, or None."""
+    submissions = sorted(
+        (e for e in c.audit.list_for("AnalysisCase", case.id) if e.action == "SUBMITTED"),
+        key=lambda e: e.at,
+    )
+    if not submissions:
+        return None
+    name = (submissions[-1].detail or {}).get("supervisor")
+    return _active_supervisors(c).get(_norm(name)) if name else None
+
+
+def _validator(c, case: E.AnalysisCase) -> str | None:
+    """The active supervisor who validated the current result, or None."""
+    _run, dataset = _latest_validated_dataset(c, case)
+    if dataset is None:
+        return None
+    return _active_supervisors(c).get(_norm(dataset.validated_by))
+
+
+def _is_for_me(owner: str | None, me: str | None) -> bool:
+    """No owner (or sign-in off) = for every supervisor."""
+    return owner is None or me is None or _norm(owner) == me
+
+
+def _require_assignee(c, case: E.AnalysisCase, action: str) -> None:
+    if not auth_required() or case.status != E.SUBMITTED:
+        return
+    assigned = _assigned_supervisor(c, case)
+    if assigned and _norm(assigned) != _norm(current_user().full_name):
+        raise Forbidden(f"this case was submitted to {assigned} — only they can {action}")
+
+
+def _require_validator(c, case: E.AnalysisCase, action: str) -> None:
+    if not auth_required():
+        return
+    validator = _validator(c, case)
+    if validator and _norm(validator) != _norm(current_user().full_name):
+        raise Forbidden(f"this result was validated by {validator} — only they can {action}")
+
+
+def _chosen_supervisor(c, name) -> str | None:
+    """The supervisor named on a submission, checked against the users.
+
+    With sign-in on and at least one active supervisor, choosing one is
+    required. With sign-in off (tests, demos) it stays optional.
+    """
+    supervisors = _active_supervisors(c)
+    name = str(name or "").strip()
+    if not name:
+        if auth_required() and supervisors:
+            raise ValueError("choose the supervisor who will validate this case")
+        return None
+    chosen = supervisors.get(_norm(name))
+    if chosen is None:
+        raise ValueError(f"{name} is not an active supervisor")
+    return chosen
+
+
+@bp.get("/supervisors")
+def list_supervisors():
+    """GET /api/supervisors — the active supervisors a case can be
+    submitted to. Names only; open to every signed-in user."""
+    c = container()
+    return jsonify(
+        sorted(
+            (
+                {"full_name": u.full_name, "username": u.username}
+                for u in c.users.list()
+                if u.is_supervisor and u.active
+            ),
+            key=lambda u: u["full_name"].casefold(),
+        )
+    )
 
 def _latest_run_id(c, case: E.AnalysisCase) -> str | None:
     runs = c.extractions.list_for_case(case.id)
@@ -646,7 +788,11 @@ def notifications():
     items = []
     for case in c.cases.list():
         history = None
-        if supervisor and case.status == E.SUBMITTED:
+        if (
+            supervisor
+            and case.status == E.SUBMITTED
+            and _is_for_me(_assigned_supervisor(c, case), me)
+        ):
             history = _workflow_history(c, case)
             last = next((h for h in reversed(history) if h["action"] == "SUBMITTED"), None)
             items.append(
@@ -660,9 +806,10 @@ def notifications():
                     "at": last["at"] if last else case.created_at.isoformat(),
                     "message": last["message"] if last else None,
                     "extraction_id": _latest_run_id(c, case),
+                    "supervisor": _assigned_supervisor(c, case),
                 }
             )
-        owner = " ".join((case.analyst or "").split()).casefold()
+        owner =" ".join((case.analyst or "").split()).casefold()
         mine = user is None or (not user.is_supervisor and (owner == me or not owner))
         if mine and case.status == E.UNDER_REVIEW:
             history = history or _workflow_history(c, case)
@@ -968,63 +1115,104 @@ def supervisor_overview():
 
 @bp.get("/my-cases")
 def my_cases():
-    """GET /api/my-cases?analyst=NAME — one analyst's cases, with state.
+    """GET /api/my-cases — the signed-in person's own work, with state.
 
-    ``?analyst=`` empty lists the cases nobody has claimed yet (created
-    before item 4). For each validated case: its ratios with the rule-based
-    interpretation, failing checks, and the AI commentary's status (its text
-    only once approved — a draft is not an analytical conclusion, BR-13).
+    * An analyst: the cases they own.
+    * A supervisor: their validation work — the cases waiting for a
+      validation (status SUBMITTED; any supervisor may validate them, there
+      is no assignment) and the cases whose current result they validated.
+      Each entry says which list it belongs to in ``my_queue``
+      ("AWAITING_VALIDATION" or "VALIDATED_BY_ME"). Every case of every
+      analyst stays on the Cases page.
+    * ``?analyst=NAME`` (supervisor only) still lists one analyst's cases,
+      and ``?analyst=`` empty the cases nobody has claimed.
+
+    For each validated case: its ratios with the rule-based interpretation,
+    failing checks, and the AI commentary's status (its text only once
+    approved — a draft is not an analytical conclusion, BR-13).
 
     Read-only and side-effect free: ratios are computed directly, so
     opening this page never moves a case to ANALYSED or writes the audit.
     """
     c = container()
     analyst = (request.args.get("analyst") or "").strip()
+    supervisor_view = False
+    me = ""
     if auth_required():
         user = current_user()
-        # An analyst sees their own cases only; a supervisor may look at
-        # anyone's ("?analyst=" empty = unassigned), defaulting to their own.
-        if not user.is_supervisor or "analyst" not in request.args:
+        me = user.full_name
+        if user.is_supervisor and "analyst" not in request.args:
+            supervisor_view = True
+        elif not user.is_supervisor or "analyst" not in request.args:
+            # An analyst sees their own cases only.
             analyst = user.full_name
     wanted = analyst.casefold()
 
     result = []
     for case in c.cases.list():
-        owner = (case.analyst or "").strip().casefold()
-        if owner != wanted:
-            continue
-
-        runs = c.extractions.list_for_case(case.id)
-        latest_run = runs[-1] if runs else None
         run, dataset = _latest_validated_dataset(c, case)
 
-        entry = case_json(case)
-        entry["latest_extraction"] = (
-            run_json(latest_run, fields=False) if latest_run else None
+        if supervisor_view:
+            # _validator follows a rename (see _active_supervisors).
+            validated_by_me = (
+                dataset is not None
+                and case.status in {E.VALIDATED, E.ANALYSED}
+                and _norm(_validator(c, case) or dataset.validated_by) == _norm(me)
+            )
+            if case.status == E.SUBMITTED:
+                if not _is_for_me(_assigned_supervisor(c, case), " ".join(me.split()).casefold()):
+                    continue
+                queue = "AWAITING_VALIDATION"
+            elif validated_by_me:
+                queue = "VALIDATED_BY_ME"
+            else:
+                continue
+        else:
+            owner = (case.analyst or "").strip().casefold()
+            if owner != wanted:
+                continue
+            queue = None
+
+        entry = _my_case_entry(c, case, dataset)
+        entry["my_queue"] = queue
+        entry["assigned_supervisor"] = (
+            _assigned_supervisor(c, case) if case.status == E.SUBMITTED else None
         )
-        entry["dataset"] = dataset_json(dataset) if dataset else None
-        entry["ratios"] = []
-        entry["failed_checks"] = []
-        entry["ai_analysis"] = None
-
-        if dataset is not None:
-            results = compute_all(dataset.statement())
-            by_code = {i.ratio_code: i for i in interpret_all(results)}
-            entry["ratios"] = [ratio_json(r, by_code.get(r.code)) for r in results]
-            entry["failed_checks"] = [
-                check_json(o) for o in run_all(dataset.statement()) if not o.passed
-            ]
-            ai = c.insight.latest(dataset.id)
-            if ai is not None:
-                summary = ai_analysis_json(ai)
-                if ai.status != E.AI_APPROVED:
-                    summary["sections"] = None
-                    summary["generated_sections"] = None
-                entry["ai_analysis"] = summary
-
         result.append(entry)
 
     return jsonify(result)
+
+
+def _my_case_entry(c, case: E.AnalysisCase, dataset) -> dict:
+    """One card of the My cases page: the case, its latest run and results."""
+    runs = c.extractions.list_for_case(case.id)
+    latest_run = runs[-1] if runs else None
+
+    entry = case_json(case)
+    entry["latest_extraction"] = (
+        run_json(latest_run, fields=False) if latest_run else None
+    )
+    entry["dataset"] = dataset_json(dataset) if dataset else None
+    entry["ratios"] = []
+    entry["failed_checks"] = []
+    entry["ai_analysis"] = None
+
+    if dataset is not None:
+        results = compute_all(dataset.statement())
+        by_code = {i.ratio_code: i for i in interpret_all(results)}
+        entry["ratios"] = [ratio_json(r, by_code.get(r.code)) for r in results]
+        entry["failed_checks"] = [
+            check_json(o) for o in run_all(dataset.statement()) if not o.passed
+        ]
+        ai = c.insight.latest(dataset.id)
+        if ai is not None:
+            summary = ai_analysis_json(ai)
+            if ai.status != E.AI_APPROVED:
+                summary["sections"] = None
+                summary["generated_sections"] = None
+            entry["ai_analysis"] = summary
+
+    return entry
 
 
 @bp.get("/cases/<case_id>/export")

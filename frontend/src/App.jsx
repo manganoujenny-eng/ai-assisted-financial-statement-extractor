@@ -119,7 +119,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<CasesPage />} />
           <Route path="/my-cases" element={<MyCasesPage />} />
-          <Route path="/account" element={<AccountPage user={user} />} />
+          <Route path="/account" element={<AccountPage user={user} onUpdated={signedIn} />} />
           <Route
             path="/supervisor"
             element={supervisor ? <SupervisorPage /> : <Navigate to="/" replace />}

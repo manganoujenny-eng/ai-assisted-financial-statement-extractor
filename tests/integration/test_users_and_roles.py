@@ -19,6 +19,7 @@ from app.domain import entities as E
 from integration.test_api_end_to_end import FakeReader, FakeStructurer
 
 PASSWORD = "correct-horse"
+TO_PAUL = {"supervisor": "Paul Mbarga"}  # the analyst assigns the validator
 
 
 @pytest.fixture
@@ -117,7 +118,7 @@ def test_only_a_supervisor_can_validate_and_validated_by_is_their_name(app):
     bz = next(f for f in fields if f["item_code"] == "BZ")
     helena.patch(f"/api/fields/{bz['id']}", json={"amount": "11246235"})
 
-    assert helena.post(f"/api/cases/{case_id}/submission").status_code == 200
+    assert helena.post(f"/api/cases/{case_id}/submission", json=TO_PAUL).status_code == 200
     refused = helena.post(f"/api/extractions/{run_id}/validation", json={"supervisor": "Paul Mbarga"})
     assert refused.status_code == 403
 
@@ -154,7 +155,7 @@ def test_analyst_sees_only_own_cases_on_my_cases(app):
 def test_analyst_cannot_delete_validated_work_supervisor_deletes_analysed_only(app):
     helena = _login(app, "helena")
     case_id, run_id = _case_with_run(helena)
-    helena.post(f"/api/cases/{case_id}/submission")
+    helena.post(f"/api/cases/{case_id}/submission", json=TO_PAUL)
     paul = _login(app, "paul")
     dataset_id = paul.post(
         f"/api/extractions/{run_id}/validation", json={"acknowledge_failed_checks": True}
@@ -223,7 +224,7 @@ def test_correction_request_goes_to_the_analyst_then_back_to_the_supervisor(app)
     case_id, run_id = _case_with_run(helena)
 
     assert paul.get("/api/notifications").get_json() == []
-    helena.post(f"/api/cases/{case_id}/submission", json={"note": "please check BZ"})
+    helena.post(f"/api/cases/{case_id}/submission", json={"note": "please check BZ", "supervisor": "Paul Mbarga"})
     [note] = paul.get("/api/notifications").get_json()
     assert (note["kind"], note["author"], note["message"]) == (
         "SUBMITTED", "Helena Ndongo", "please check BZ"
@@ -252,7 +253,7 @@ def test_correction_request_goes_to_the_analyst_then_back_to_the_supervisor(app)
         if f["item_code"] == "BZ"
     )
     assert helena.patch(f"/api/fields/{bz['id']}", json={"amount": "11246235"}).status_code == 200
-    helena.post(f"/api/cases/{case_id}/submission")
+    helena.post(f"/api/cases/{case_id}/submission", json=TO_PAUL)
     assert helena.get("/api/notifications").get_json() == []
     assert paul.post(f"/api/extractions/{run_id}/validation", json={}).status_code == 201
 
@@ -264,7 +265,7 @@ def test_supervisor_can_send_back_a_validated_case(app):
     helena = _login(app, "helena")
     paul = _login(app, "paul")
     case_id, run_id = _case_with_run(helena)
-    helena.post(f"/api/cases/{case_id}/submission")
+    helena.post(f"/api/cases/{case_id}/submission", json=TO_PAUL)
     paul.post(f"/api/extractions/{run_id}/validation", json={"acknowledge_failed_checks": True})
     sent = paul.post(f"/api/cases/{case_id}/correction-request", json={"message": "recheck"})
     assert sent.get_json()["status"] == "UNDER_REVIEW"
@@ -343,9 +344,9 @@ def test_supervisor_overview(app):
 
     # Helena: one case awaiting validation. Eric: one validated with failures.
     h1, _ = _case_with_run(helena, client="H1")
-    helena.post(f"/api/cases/{h1}/submission")
+    helena.post(f"/api/cases/{h1}/submission", json=TO_PAUL)
     e1, eric_run = _case_with_run(eric, client="E1")
-    eric.post(f"/api/cases/{e1}/submission")
+    eric.post(f"/api/cases/{e1}/submission", json=TO_PAUL)
     paul.post(f"/api/extractions/{eric_run}/validation", json={"acknowledge_failed_checks": True})
 
     assert helena.get("/api/supervisor/overview").status_code == 403

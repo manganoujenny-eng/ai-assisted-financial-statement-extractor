@@ -182,4 +182,8 @@ def dataset_json(dataset: E.ValidatedDataset) -> dict:
         "validated_by": dataset.validated_by,
         "validated_at": dataset.validated_at.isoformat(),
         "item_count": len(dataset.amounts),
+        # The validated amounts of year N and, when the package had them,
+        # of year N-1 — the dashboard charts the key figures side by side.
+        "amounts": dict(dataset.amounts),
+        "prior_year_amounts": dict(getattr(dataset, "prior_year_amounts", {}) or {}),
     }

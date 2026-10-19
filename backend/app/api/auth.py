@@ -189,6 +189,15 @@ def me():
         raise Unauthorized("sign in first")
     return jsonify({**user_json(user), "auth_required": True})
 
+@auth_bp.patch("/me")
+def update_me():
+    """My account: change my own full name (any signed-in user)."""
+    user = current_user()
+    if user is None:
+        raise Unauthorized("sign in first")
+    payload = request.get_json(silent=True) or {}
+    _container().user_service.update_own_profile(user, str(payload.get("full_name") or ""))
+    return jsonify({**user_json(user), "auth_required": True})
 
 @auth_bp.post("/password")
 def change_password():
@@ -244,3 +253,17 @@ def update_user(user_id: str):
         password=payload.get("password") or None,
     )
     return jsonify(user_json(user))
+
+@users_bp.delete("/<user_id>")
+def delete_user(user_id: str):
+    """Delete an analyst who owns no case (supervisor only)."""
+    require_supervisor()
+    c = _container()
+    user = c.users.get(user_id)
+    if user is None:
+        raise KeyError(user_id)
+    author = current_user() or E.User(
+        username="local", full_name="Local user", role=E.ROLE_SUPERVISOR, password_hash="-", id="local"
+    )
+    c.user_service.delete(user, author)
+    return "", 204

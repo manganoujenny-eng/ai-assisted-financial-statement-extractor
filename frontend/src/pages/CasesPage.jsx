@@ -55,7 +55,13 @@ export default function CasesPage() {
 
   function canDelete(analysisCase) {
     if (authOff) return true
-    if (supervisor) return analysisCase.status === 'ANALYSED'
+    // A supervisor deletes only an ANALYSED case whose result they validated.
+    if (supervisor) {
+      return (
+        analysisCase.status === 'ANALYSED' &&
+        (!analysisCase.validator || sameName(analysisCase.validator, api.getAnalystName()))
+      )
+    }
     return canPrepare(analysisCase)
   }
 
@@ -546,6 +552,11 @@ export default function CasesPage() {
                           <StatusPill
                               status={analysisCase.status}
                           />
+                          {analysisCase.assigned_supervisor && (
+                            <div className="faint" style={{ marginTop: 4 }}>
+                              {t('assign.to', { name: analysisCase.assigned_supervisor })}
+                            </div>
+                          )}
                         </td>
 
                         {/* DOCUMENTS */}
@@ -671,7 +682,10 @@ export default function CasesPage() {
                                        )
                                     }
                                   >
-                                     {supervisor && analysisCase.status === 'SUBMITTED'
+                                     {supervisor &&
+                                     analysisCase.status === 'SUBMITTED' &&
+                                     (!analysisCase.assigned_supervisor ||
+                                       sameName(analysisCase.assigned_supervisor, api.getAnalystName()))
                                        ? t('workflow.reviewAndValidate')
                                        : t('cases.openReview')}
                                   </button>

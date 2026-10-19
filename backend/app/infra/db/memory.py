@@ -202,3 +202,6 @@ class InMemoryUserRepository:
 
     def save(self, user: E.User) -> None:
         self._users[user.id] = user
+
+    def delete(self, user_id: str) -> None:
+        self._users.pop(user_id, None)

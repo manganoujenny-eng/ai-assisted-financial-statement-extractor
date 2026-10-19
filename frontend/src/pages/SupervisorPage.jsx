@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom'
 import * as api from '../api/client.js'
 import StatusPill from '../components/StatusPill.jsx'
 import { useCheckText } from '../components/ChecksPanel.jsx'
+import RatioSpread from '../components/RatioSpread.jsx'
 import { labelByCode, useI18n } from '../i18n/index.jsx'
 
 const STATUSES = [
@@ -289,6 +290,9 @@ export default function SupervisorPage() {
 
       <section className="card">
         <h3 style={{ marginTop: 0 }}>{t('sup.ratiosTitle')}</h3>
+        <RatioSpread ratios={data.ratios} cases={data.cases} />
+        <details className="yc-table">
+          <summary>{t('dash.chartAsTable')}</summary>
         <div className="fields-table-wrap">
           <table>
             <thead>
@@ -328,6 +332,7 @@ export default function SupervisorPage() {
             </tbody>
           </table>
         </div>
+        </details>
         <p className="faint" style={{ marginBottom: 0 }}>
           {t('sup.noReferenceHint')}
         </p>

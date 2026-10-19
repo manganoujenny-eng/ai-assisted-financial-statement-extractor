@@ -29,7 +29,15 @@ from ..domain import entities as E
 from ..domain.ports import AiAnalysisRepository, AnalysisWriter, AuditLog
 from ..domain.syscohada import label_of
 
-SECTION_KEYS = ("overview", "ratios", "checks", "comparison", "attention")
+SECTION_KEYS = (
+    "overview",
+    "diagnosis",
+    "ratios",
+    "checks",
+    "comparison",
+    "recommendations",
+    "attention",
+)
 MAX_SECTION_CHARS = 4000
 
 
@@ -68,10 +76,6 @@ def build_payload(
                 "unit": r.get("unit"),
                 "reason": r.get("reason"),
                 "items_used": r.get("items_used"),
-                "template_interpretation": (r.get("interpretation") or {}).get("text"),
-                "documented_threshold": (r.get("interpretation") or {}).get(
-                    "threshold_applied"
-                ),
             }
             for r in ratios
         ],
@@ -142,18 +146,22 @@ def clean_sections(sections: object, ratio_codes: set[str] | None = None) -> dic
             raise ValueError(f"commentary for {code} must be text")
         ratios_out[code] = commentary.strip()[:MAX_SECTION_CHARS]
 
-    attention_in = sections.get("attention") or []
-    if not isinstance(attention_in, list) or not all(
-        isinstance(point, str) for point in attention_in
-    ):
-        raise ValueError("'attention' must be a list of short texts")
+    def points(key: str) -> list[str]:
+        value = sections.get(key) or []
+        if not isinstance(value, list) or not all(isinstance(p, str) for p in value):
+            raise ValueError(f"'{key}' must be a list of short texts")
+        return [p.strip()[:MAX_SECTION_CHARS] for p in value if p.strip()][:10]
 
+    # "diagnosis" and "recommendations" came with prompt v3: a commentary
+    # written before has neither, and reads back with them empty.
     return {
         "overview": text("overview"),
+        "diagnosis": text("diagnosis"),
         "ratios": ratios_out,
         "checks": text("checks"),
         "comparison": text("comparison"),
-        "attention": [point.strip() for point in attention_in if point.strip()][:10],
+        "recommendations": points("recommendations"),
+        "attention": points("attention"),
     }
 
 

@@ -1,13 +1,29 @@
 /* Sign in . Username + password, checked by the backend; the
  * session cookie it sets is what identifies the user from then on.
  *
- * Left: the EB-PARTNERS AUDIT brand panel (hidden on small screens).
- * Right: the form, with the brand shown above it on small screens. */
+ * Left: the EB-PARTNERS AUDIT brand panel with a short explanation of
+ * what the system does (on small screens the explanation moves under the
+ * form). Right: the form. */
 
 import { useState } from 'react'
 import * as api from '../api/client.js'
 import { LanguageSwitcher, useI18n } from '../i18n/index.jsx'
 import BrandMark, { BrandSymbol } from '../components/BrandMark.jsx'
+
+/* What the system is for, in three steps — shown to anyone signing in. */
+function About({ className }) {
+  const { t } = useI18n()
+  return (
+    <div className={className}>
+      <p className="login-about-lead">{t('login.aboutLead')}</p>
+      <ol className="login-steps">
+        <li><strong>{t('login.step1Title')}</strong> {t('login.step1')}</li>
+        <li><strong>{t('login.step2Title')}</strong> {t('login.step2')}</li>
+        <li><strong>{t('login.step3Title')}</strong> {t('login.step3')}</li>
+      </ol>
+    </div>
+  )
+}
 
 export default function LoginPage({ onSignedIn }) {
   const [username, setUsername] = useState('')
@@ -38,6 +54,7 @@ export default function LoginPage({ onSignedIn }) {
           <BrandSymbol />
           <h2>EB-PARTNERS AUDIT</h2>
           <p className="login-tagline">Audit and Advisory</p>
+          <About className="login-about" />
         </div>
         <p className="login-product">{t('app.title')}</p>
       </aside>
@@ -87,6 +104,8 @@ export default function LoginPage({ onSignedIn }) {
           </button>
 
           <p className="faint login-help">{t('login.help')}</p>
+
+          <About className="login-about login-about-mobile" />
         </form>
       </div>
     </div>

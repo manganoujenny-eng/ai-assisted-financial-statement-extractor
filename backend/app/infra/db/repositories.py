@@ -385,6 +385,13 @@ class SqlUserRepository:
         row.active = user.active
         self.session.commit()
 
+
+    def delete(self, user_id: str) -> None:
+        row = self.session.get(UserRow, user_id)
+        if row is not None:
+            self.session.delete(row)
+            self.session.commit()
+
 class SqlAuditLog:
     def __init__(self, session: Session) -> None:
         self.session = session

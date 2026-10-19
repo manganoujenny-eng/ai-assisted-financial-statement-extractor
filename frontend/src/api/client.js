@@ -50,7 +50,9 @@ async function request(path, options = {}) {
       ...options,
       headers: { 'Accept-Language': language, ...(options.headers || {}) },
     })
-  } catch {
+  } catch (err) {
+    // Stopped on purpose by longTask's time limit: let longTask explain it.
+    if (err?.name === 'AbortError') throw err
     // The request never reached Flask: backend stopped, or the network dropped.
     throw new ApiError(0, { detail: unreachableText(0) })
   }
@@ -74,19 +76,69 @@ function unreachableText(status) {
 }
 
 /* --- long operations ------------------------------------------------------ */
-// An extraction or an AI analysis can take minutes (the model reads every
-// page). While one runs, the page announces it on window as a "long-task"
-// event; components/BusyOverlay.jsx shows a blocking progress screen, so
-// nobody clicks the button again thinking nothing happened.
+// An extraction (OCR of scanned pages) or an AI analysis can take minutes.
+// While one runs, the page announces it on window as a "long-task" event;
+// components/BusyOverlay.jsx shows a blocking progress screen, so nobody
+// clicks the button again thinking nothing happened.
+//
+// Each has a time limit. Past it the page stops waiting, the request is
+// cancelled, and a "long-task-timeout" event makes the overlay show an
+// error with a Reload button instead of spinning for ever. The server may
+// still finish the work: reloading shows the case's real state.
+export const TIME_LIMITS_MS = {
+  extraction: 10 * 60 * 1000, // 10 minutes: a large scanned package by OCR
+  analysis: 4 * 60 * 1000, //    4 minutes: ratios + the AI commentary
+}
+
 let runningTasks = 0
 
-function longTask(kind, promise) {
-  runningTasks += 1
+function announce(kind) {
   window.dispatchEvent(new CustomEvent('long-task', { detail: { kind, running: runningTasks } }))
-  return promise.finally(() => {
-    runningTasks -= 1
-    window.dispatchEvent(new CustomEvent('long-task', { detail: { kind, running: runningTasks } }))
-  })
+}
+
+function timeoutText(kind, minutes) {
+  if (language === 'fr') {
+    return (
+      `${kind === 'extraction' ? "L'extraction" : "L'analyse"} n'a pas répondu en ${minutes} minutes : la page a arrêté d'attendre. ` +
+      'Le serveur a peut-être terminé entre-temps, ou s\'est arrêté. Rechargez la page pour voir l\'état réel du dossier ; ' +
+      's\'il reste bloqué, regardez la console du backend Flask.'
+    )
+  }
+  return (
+    `The ${kind} did not answer within ${minutes} minutes, so the page stopped waiting. ` +
+    'The server may have finished in the meantime, or it may have stopped. Reload the page to see the case\'s real state; ' +
+    'if it stays stuck, look at the Flask backend console.'
+  )
+}
+
+/* run(signal) starts the request; signal cancels it when time is up. */
+function longTask(kind, run) {
+  const limit = TIME_LIMITS_MS[kind] || 5 * 60 * 1000
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, limit)
+
+  runningTasks += 1
+  announce(kind)
+
+  return run(controller.signal)
+    .catch((err) => {
+      if (!timedOut) throw err
+      const minutes = Math.round(limit / 60000)
+      const message = timeoutText(kind, minutes)
+      window.dispatchEvent(new CustomEvent('long-task-timeout', { detail: { kind, minutes, message } }))
+      const error = new ApiError(408, { detail: message })
+      error.timedOut = true
+      throw error
+    })
+    .finally(() => {
+      clearTimeout(timer)
+      runningTasks -= 1
+      announce(kind)
+    })
 }
 
 function json(method, body) {
@@ -139,8 +191,15 @@ export const changePassword = (currentPassword, newPassword) =>
 
 /* --- users (supervisor) --------------------------------------------------- */
 export const listUsers = () => request('/users')
-export const createUser = (user) => request('/users', json('POST', user))
+// A supervisor manages analysts only: supervisor accounts are created in the
+// database (backend/create_supervisor.py), so a new user is always an analyst.
+export const createUser = (user) =>
+  request('/users', json('POST', { ...user, role: 'ANALYST' }))
 export const updateUser = (userId, changes) => request(`/users/${userId}`, json('PATCH', changes))
+// Only an analyst who owns no case; one with cases is deactivated instead.
+export const deleteUser = (userId) => request(`/users/${userId}`, { method: 'DELETE' })
+// My account: change my own full name.
+export const updateMe = (fullName) => request('/auth/me', json('PATCH', { full_name: fullName }))
 
 /* --- supervisor dashboard ------------------------------------------------- */
 export const getSupervisorOverview = () => request('/supervisor/overview')
@@ -252,7 +311,9 @@ export async function getExcelPreview(documentId) {
 // document was deleted and a corrected one attached, say — starts a
 // brand-new run over whatever the case's documents are at that moment.
 export const runExtraction = (caseId) =>
-  longTask('extraction', request(`/cases/${caseId}/extractions`, { method: 'POST' }))
+  longTask('extraction', (signal) =>
+    request(`/cases/${caseId}/extractions`, { method: 'POST', signal })
+  )
 export const getExtractionFields = (extractionId) =>
   request(`/extractions/${extractionId}/fields`)
 // Key in an item the extractor missed (recorded as KEYED, audited).
@@ -280,9 +341,15 @@ export const reopenCase = (caseId, reason) =>
   request(`/cases/${caseId}/reopen`, json('POST' , { reason }))
 
 /* --- hand-over between analyst and supervisor (item 5) -------------------- */
-// The analyst asks for validation of the case's newest extraction.
-export const submitCase = (caseId, note) =>
-  request(`/cases/${caseId}/submission`, json('POST', { note: note || '' }))
+// The analyst asks for validation of the case's newest extraction, and
+// names the supervisor who will validate it (only they are notified).
+export const submitCase = (caseId, note, supervisor) =>
+  request(
+    `/cases/${caseId}/submission`,
+    json('POST', { note: note || '', supervisor: supervisor || null })
+  )
+// The active supervisors a case can be submitted to (any signed-in user).
+export const listSupervisors = () => request('/supervisors')
 // The supervisor sends the case back to its analyst; the message is required.
 export const requestCorrection = (caseId, message) =>
   request(`/cases/${caseId}/correction-request`, json('POST', { message }))
@@ -293,12 +360,16 @@ export const getNotifications = () => request('/notifications')
 
 /* --- analysis ------------------------------------------------------------ */
 export const analyseDataset = (datasetId) =>
-  longTask('analysis', request(`/datasets/${datasetId}/analysis`, { method: 'POST' }))
+  longTask('analysis', (signal) =>
+    request(`/datasets/${datasetId}/analysis`, { method: 'POST', signal })
+  )
 export const getCaseAnalysis = (caseId) => request(`/cases/${caseId}/analysis`)
 
 /* --- AI commentary (item 4) — a draft until an analyst approves it ------- */
 export const regenerateAiAnalysis = (caseId, author) =>
-  longTask('analysis', request(`/cases/${caseId}/ai-analysis`, json('POST', { author })))
+  longTask('analysis', (signal) =>
+    request(`/cases/${caseId}/ai-analysis`, { ...json('POST', { author }), signal })
+  )
 export const approveAiAnalysis = (analysisId, sections, author) =>
   request(`/ai-analyses/${analysisId}/approval`, json('POST', { sections, author }))
 /* --- evaluation ---------------------------------------------------------- */
