@@ -30,25 +30,18 @@ class PdfReader:
         return os.path.splitext(path)[1].lower() == ".pdf"
 
     def read(self, path: str) -> RawDocument:
-        from document_processing.pdf_loader import (  # noqa: PLC0415 - lazy on purpose
-            detect_document_type,
-            extract_tables,
-            extract_text_with_ocr_fallback,
-            load_pdf,
-        )
+        from document_processing.pdf_loader import read_pdf  # noqa: PLC0415 - lazy on purpose
 
-        document = load_pdf(path)
-        try:
-            document_type, ocr_needed, _ = detect_document_type(document)
-            pages_text = extract_text_with_ocr_fallback(document, ocr_needed)
-        finally:
-            document.close()
-
-        # The text tolerance was found empirically on the test corpus; it is
+        # read_pdf decides OCR page by page, OCRs each scanned page once and
+        # several at a time — see its comment block in pdf_loader.py. The
+        # text tolerance was found empirically on the test corpus; it is
         # kept here, at the adapter boundary, rather than buried in the
         # extractor, because it is a property of *how we read these
         # documents*, not of what a PDF is.
-        tables_by_page = extract_tables(path, table_settings={"text_x_tolerance": 15})
+        document_type, ocr_used, pages_text, tables_by_page = read_pdf(
+            path, table_settings={"text_x_tolerance": 15}
+        )
+
         tables = [table for page_tables in tables_by_page for table in page_tables]
 
         return RawDocument(
@@ -56,15 +49,24 @@ class PdfReader:
             document_type=document_type,
             pages_text=pages_text,
             tables=tables,
-            ocr_used=(ocr_needed == "YES"),
+            ocr_used=ocr_used,
         )
 
+    def probe(self, path: str) -> tuple[int, bool]:
+        """Page count and whether OCR will be needed — no OCR, so it is
+        quick enough to run at upload and label the document straight away."""
+        from document_processing.pdf_loader import probe_pdf  # noqa: PLC0415
+
+        return probe_pdf(path)
 
 class ExcelReader:
     """Excel workbooks (README: formulas resolved via ``data_only=True``)."""
 
     def supports(self, path: str) -> bool:
         return os.path.splitext(path)[1].lower() in (".xlsx", ".xls")
+
+    def probe(self, path: str) -> tuple[int | None, bool]:
+        return None, False
 
     def read(self, path: str) -> RawDocument:
         from document_processing.excel_loader import (  # noqa: PLC0415
@@ -74,7 +76,10 @@ class ExcelReader:
         )
 
         workbook = load_excel(path)
-        sheets = extract_excel_text(workbook)
+        try:
+            sheets = extract_excel_text(workbook)
+        finally:
+            workbook.close()
 
         tables = []
         pages_text = []

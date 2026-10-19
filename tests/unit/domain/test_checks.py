@@ -9,6 +9,7 @@ code happens to do; a test written first describes what the code should do.
 These are written first — for you.
 """
 
+from decimal import Decimal
 import pytest
 
 from app.domain.checks import (
@@ -67,6 +68,20 @@ class TestCHK002:
         outcome = check_subtotal_consistency(balanced)
         assert outcome.passed
         assert outcome.gap == 0
+
+    def test_passing_gap_is_quantized_to_two_decimals_like_every_other_check(
+        self, balanced
+    ):
+        """BR-15 — a gap is a monetary amount and always carries two decimals.
+
+        The passing branch used to hardcode ``gap=0`` (a bare int), which
+        serialised as "0" instead of "0.00" — inconsistent with CHK001 and
+        CHK003, whose gap is always an Amount-derived Decimal. This pins the
+        exact representation so that inconsistency cannot creep back in.
+        """
+        outcome = check_subtotal_consistency(balanced)
+        assert outcome.gap == Decimal("0.00")
+        assert str(outcome.gap) == "0.00"
 
     def test_fails_when_the_asset_subtotals_do_not_add_up(self, balanced):
         # BK is inflated by 1 000 but BZ is left alone: the sides still each

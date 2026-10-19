@@ -1,7 +1,11 @@
 from openpyxl import load_workbook
 
 def load_excel(path):
-    workbook = load_workbook(path, data_only=True)
+    # read_only streams rows instead of building every cell object in memory
+    # first — the difference between a few MB and a few GB on a large
+    # workbook. Same values (checked on the test workbooks). The caller must
+    # close() it when done, or the file stays open on Windows.
+    workbook = load_workbook(path, data_only=True, read_only=True)
     return workbook
 def extract_excel_text(workbook):
     sheets_data = {}

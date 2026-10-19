@@ -32,9 +32,20 @@ class TestCaseLifecycle:
 
     def test_the_normal_path_runs_through(self):
         case = E.AnalysisCase(client="ACME SARL", fiscal_year=2024)
-        for state in (E.EXTRACTING, E.EXTRACTED, E.UNDER_REVIEW, E.VALIDATED, E.ANALYSED):
+        for state in (
+            E.EXTRACTING, E.EXTRACTED, E.UNDER_REVIEW, E.SUBMITTED, E.VALIDATED, E.ANALYSED
+        ):
             case.transition_to(state)
         assert case.status == E.ANALYSED
+
+    def test_nothing_is_validated_before_the_analyst_submits_it(self):
+        for status in (E.EXTRACTED, E.UNDER_REVIEW):
+            case = E.AnalysisCase(client="ACME SARL", fiscal_year=2024, status=status)
+            with pytest.raises(E.DomainError, match="not allowed"):
+                case.transition_to(E.VALIDATED)
+
+    def test_a_submitted_case_is_validated_or_sent_back(self):
+        assert E.ALLOWED_TRANSITIONS[E.SUBMITTED] == {E.VALIDATED, E.UNDER_REVIEW}
 
     def test_an_analysed_case_can_be_reopened(self):
         case = E.AnalysisCase(client="ACME SARL", fiscal_year=2024, status=E.ANALYSED)

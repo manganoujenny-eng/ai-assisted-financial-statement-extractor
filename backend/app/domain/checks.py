@@ -156,7 +156,7 @@ def check_subtotal_consistency(statement: FinancialStatement) -> CheckOutcome:
             label="Subtotal consistency",
             severity=WARNING,
             passed=True,
-            gap=0,
+            gap=asset_gap,
             message="asset and liability subtotal consistency",
             items_used=(
                 "AZ", "BK", "BT", "BU", "BZ",

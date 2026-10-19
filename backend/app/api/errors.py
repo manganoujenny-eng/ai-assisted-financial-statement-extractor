@@ -18,10 +18,11 @@ The status codes are chosen, not guessed:
 from __future__ import annotations
 
 from flask import jsonify
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from ..domain.entities import DomainError
 from ..services.extraction_service import ExtractionFailed
+from ..services.user_service import AuthenticationFailed
 from ..services.validation_service import ValidationRefused
 
 
@@ -55,6 +56,10 @@ def register_error_handlers(app) -> None:
             409,
         )
 
+    @app.errorhandler(AuthenticationFailed)
+    def _auth_failed(exc: AuthenticationFailed):
+        return jsonify({"error": "authentication_failed", "detail": str(exc)}), 401
+
     @app.errorhandler(ExtractionFailed)
     def _extraction_failed(exc: ExtractionFailed):
         return jsonify({"error": "extraction_failed", "detail": str(exc)}), 422
@@ -66,6 +71,20 @@ def register_error_handlers(app) -> None:
     @app.errorhandler(ValueError)
     def _bad_value(exc: ValueError):
         return jsonify({"error": "invalid_value", "detail": str(exc)}), 422
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def _too_large(exc: RequestEntityTooLarge):
+        limit_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+        return (
+            jsonify(
+                {
+                    "error": "file_too_large",
+                    "detail": f"the file is larger than the {limit_mb} MB upload limit "
+                    "(MAX_UPLOAD_MB in the backend configuration)",
+                }
+            ),
+            413,
+        )
 
     @app.errorhandler(HTTPException)
     def _http(exc: HTTPException):

@@ -31,7 +31,7 @@ def test_to_fields_records_rejected_items():
 
     service = object.__new__(ExtractionService)
 
-    fields , rejections = service._to_fields("run-001", structured)
+    fields , rejections = service._to_fields("run-001", structured, "doc-001")
 
     assert len(fields) == 1
     assert fields[0].item_code == "BK"

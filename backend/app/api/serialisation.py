@@ -13,6 +13,9 @@ The frontend formats; it does not compute.
 
 from __future__ import annotations
 
+import os
+import re
+
 from ..domain import entities as E
 from ..domain.checks import CheckOutcome
 from ..domain.interpretation import Interpretation
@@ -27,15 +30,43 @@ def case_json(case: E.AnalysisCase) -> dict:
         "fiscal_year": case.fiscal_year,
         "status": case.status,
         "created_at": case.created_at.isoformat(),
+        "analyst": case.analyst,
         "documents": [document_json(d) for d in case.documents],
     }
 
+#: Uploads are stored as "<case id>__<original name>" so two cases can hold
+#: files with the same name. The analyst never needs to see that prefix.
+_STORED_PREFIX = re.compile(r"^[0-9a-fA-F-]{36}__")
+
+def document_display_name(file_name: str) -> str:
+        """'81966f42-…__Compte_de_resultat_SOCATRANS_2023_scan.pdf'
+        -> 'Compte_de_resultat_SOCATRANS_2023_scan'."""
+        base = _STORED_PREFIX.sub("", file_name or "")
+        return os.path.splitext(base)[0] or base
+
+def document_type_label(document: E.SourceDocument) -> str:
+        """Native PDF, Scanned PDF or Excel — what the analyst needs to know.
+
+        A PDF with even one page that has to be read by OCR counts as scanned:
+        that is what decides how reliable (and how slow) its extraction is.
+        """
+        if document.doc_type == "XLSX":
+            return "Excel"
+        if document.doc_type == "PDF":
+            if document.is_scanned is True:
+                return "Scanned PDF"
+            if document.is_scanned is False:
+                return "Native PDF"
+            return "PDF"
+        return document.doc_type or "Document"
 
 def document_json(document: E.SourceDocument) -> dict:
-    return {
-        "id": document.id,
-        "case_id": document.case_id,
-        "file_name": document.file_name,
+        return {
+            "id": document.id,
+            "case_id": document.case_id,
+            "file_name": document.file_name,
+            "display_name": document_display_name(document.file_name),
+            "type_label": document_type_label(document),
         "doc_type": document.doc_type,
         "sha256": document.sha256,
         "page_count": document.page_count,
@@ -43,11 +74,11 @@ def document_json(document: E.SourceDocument) -> dict:
         "uploaded_at": document.uploaded_at.isoformat(),
     }
 
-
 def field_json(field: E.ExtractedField) -> dict:
     return {
         "id": field.id,
         "item_code": field.item_code,
+        "document_id": field.document_id,
         "label": label_of(field.item_code),
         "amount": str(field.amount.value),
         "amount_display": str(field.amount),
@@ -55,6 +86,7 @@ def field_json(field: E.ExtractedField) -> dict:
             str(field.proposed_amount.value) if field.proposed_amount else None
         ),
         "was_corrected": field.was_corrected,
+        "is_keyed": field.is_keyed,
         "year": field.year,
         "source_page": field.source_page,
         "confidence": str(field.confidence) if field.confidence is not None else None,
@@ -63,11 +95,11 @@ def field_json(field: E.ExtractedField) -> dict:
         "corrected_at": field.corrected_at.isoformat() if field.corrected_at else None,
     }
 
-
 def run_json(run: E.ExtractionRun, fields: bool = True) -> dict:
     payload = {
         "id": run.id,
-        "document_id": run.document_id,
+        "case_id": run.case_id,
+        "document_ids": list(run.document_ids),
         "engine": run.engine,
         "model": run.model,
         "prompt_version": run.prompt_version,
@@ -116,6 +148,32 @@ def ratio_json(result: RatioResult, interpretation: Interpretation | None = None
         }
     return payload
 
+def ai_analysis_json(analysis: E.AiAnalysis | None) -> dict | None:
+    if analysis is None:
+        return None
+    return {
+        "id": analysis.id,
+        "case_id": analysis.case_id,
+        "dataset_id": analysis.dataset_id,
+        "status": analysis.status,
+        "sections": analysis.sections,
+        "generated_sections": analysis.generated_sections,
+        "was_edited": analysis.was_edited,
+        "model": analysis.model,
+        "prompt_version": analysis.prompt_version,
+        # "analysis-v2/fr" -> "fr". Older commentaries (analysis-v1) were
+        # always written in English.
+        "language": (
+            analysis.prompt_version.split("/", 1)[1]
+            if analysis.prompt_version and "/" in analysis.prompt_version
+            else ("en" if analysis.prompt_version else None)
+        ),
+        "cost_usd": str(analysis.cost_usd) if analysis.cost_usd is not None else None,
+        "failure_reason": analysis.failure_reason,
+        "generated_at": analysis.generated_at.isoformat(),
+        "approved_by": analysis.approved_by,
+        "approved_at": analysis.approved_at.isoformat() if analysis.approved_at else None,
+    }
 
 def dataset_json(dataset: E.ValidatedDataset) -> dict:
     return {

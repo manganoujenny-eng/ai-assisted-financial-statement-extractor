@@ -69,7 +69,10 @@ class ExtractionService:
     # --- FR-02 ----------------------------------------------------------
     def register_document(self, case: E.AnalysisCase, path: str) -> E.SourceDocument:
         fingerprint = sha256_of(path)
-        already = self.documents.find_by_sha256(fingerprint)
+        # Scoped to case.id on purpose (FR-02/NFR-08): the port requires
+        # (sha256, case_id), and this call site used to pass only the
+        # fingerprint, which is a TypeError on every adapter.
+        already = self.documents.find_by_sha256(fingerprint, case.id)
         if already is not None:
             # NFR-08 — do not pay to extract the same bytes twice.
             return already
@@ -81,6 +84,7 @@ class ExtractionService:
             sha256=fingerprint,
             stored_path=path,
         )
+        self._probe(document)
         case.attach(document)
         self.documents.add(document)
         self.audit.record(
@@ -96,38 +100,92 @@ class ExtractionService:
 
     # --- UC-03 ----------------------------------------------------------
     def run_extraction(
-        self, case: E.AnalysisCase, document: E.SourceDocument, author: str = "system"
+        self, case: E.AnalysisCase, author: str = "system"
     ) -> E.ExtractionRun:
+        """Extract every document currently attached to the case, together.
+
+        This used to take one document. It now reads the case's whole set:
+        an analyst uploads the balance sheet and the income statement as two
+        separate files, and only one combined run — one review screen, one
+        validation — makes sense of both at once (a ratio like return on
+        equity needs an item from each). Re-running this later (after
+        deleting a wrong document and attaching the right one, say) always
+        starts a brand-new run over whatever the case's documents are at
+        that moment — the old run is kept, never edited, same as before.
+        """
+        if not case.documents:
+            raise ExtractionFailed("the case has no documents to extract")
+
         case.transition_to(E.EXTRACTING)
         run = E.ExtractionRun(
-            document_id=document.id,
+            case_id=case.id,
             engine=self.structurer.engine,
             status=E.EXTRACTING,
+            document_ids=[d.id for d in case.documents],
         )
         self.extractions.add(run)
 
         try:
-            # 1-2. detect the type, extract text and tables (the reader
-            #      decides internally whether OCR is needed — alternative A1).
-            reader = self._reader_for(document.stored_path or document.file_name)
-            raw = reader.read(document.stored_path or document.file_name)
-            document.page_count = raw.page_count
-            document.is_scanned = raw.ocr_used
+            all_fields: list[E.ExtractedField] = []
+            all_rejections: list[E.ExtractionRejection] = []
+            # Which document first proposed each (item_code, year) — so a
+            # collision reported below can name both documents, not just
+            # the code. A collision is refused rather than silently resolved
+            # (last-document-wins, say): SYSCOHADA codes are supposed to be
+            # disjoint across statements, and a document that duplicates one
+            # is far more likely a mistake (the same page scanned twice
+            # across two files, an income statement that also repeats a
+            # balance-sheet subtotal) than a figure to average away.
+            seen_by: dict[tuple[str, str], str] = {}
 
-            # 3. submit to the structurer (LLM or rule-based: same port).
-            structured = self.structurer.structure(raw)
+            for document in case.documents:
+                # 1-2. detect the type, extract text and tables (the reader
+                #      decides internally whether OCR is needed — A1).
+                reader = self._reader_for(document.stored_path or document.file_name)
+                raw = reader.read(document.stored_path or document.file_name)
+                document.page_count = raw.page_count
+                document.is_scanned = raw.ocr_used
+                # Without this, page_count/is_scanned are set on this
+                # in-memory object and never written back — every document,
+                # including ones that extract successfully, reports
+                # page_count=null and is_scanned=null forever.
+                self.documents.save(document)
 
-            # 4. validate against the schema. Anything the structurer proposes
-            #    that is not a real SYSCOHADA code or a real amount is dropped
-            #    here, at the boundary — §11.1, "the domain never receives
-            #    free text".
-            run.model = structured.model
-            run.prompt_version = structured.prompt_version
-            run.cost_usd = structured.cost_usd
-            run.fields , run.rejections  = self._to_fields(run.id, structured)
+                # 3. submit to the structurer (LLM or rule-based: same port).
+                structured = self.structurer.structure(raw)
+                run.model = run.model or structured.model
+                run.prompt_version = run.prompt_version or structured.prompt_version
+                if structured.cost_usd is not None:
+                    run.cost_usd = (run.cost_usd or Decimal(0)) + structured.cost_usd
+
+                # 4. validate against the schema. Anything the structurer
+                #    proposes that is not a real SYSCOHADA code or a real
+                #    amount is dropped here, at the boundary — §11.1, "the
+                #    domain never receives free text".
+                doc_fields, doc_rejections = self._to_fields(
+                    run.id, structured, document.id
+                )
+
+                for item in doc_fields:
+                    key = (item.item_code, item.year)
+                    earlier = seen_by.get(key)
+                    if earlier is not None:
+                        raise ExtractionFailed(
+                            f"item {item.item_code} (year {item.year}) was "
+                            f'found in both "{earlier}" and '
+                            f'"{document.file_name}" — remove the duplicate '
+                            "from one of the two documents and extract again"
+                        )
+                    seen_by[key] = document.file_name
+
+                all_fields.extend(doc_fields)
+                all_rejections.extend(doc_rejections)
+
+            run.fields = all_fields
+            run.rejections = all_rejections
 
             if not run.fields:
-                raise ExtractionFailed("no usable item found in the document")
+                raise ExtractionFailed("no usable item found in any document")
 
             # 5. run the consistency checks, before any human intervention.
             outcomes = run_all(run.statement())
@@ -146,6 +204,7 @@ class ExtractionService:
                     author=author,
                     detail={
                         "fields": len(run.fields),
+                        "documents": len(run.document_ids),
                         "engine": run.engine,
                         "checks_failed": [
                             o.code for o in outcomes if not o.passed
@@ -176,20 +235,38 @@ class ExtractionService:
             raise
 
     # --- helpers --------------------------------------------------------
+    def _probe(self, document: E.SourceDocument) -> None:
+        """Fill page_count / is_scanned at upload, so the document shows as
+        Native PDF, Scanned PDF or Excel before any extraction. Optional
+        (a reader without probe() is fine) and never blocks the upload: a
+        file that cannot be opened here fails later, at extraction, with
+        its reason recorded on the run."""
+        try:
+            reader = self._reader_for(document.stored_path or document.file_name)
+            probe = getattr(reader, "probe", None)
+            if probe is None:
+                return
+            page_count, needs_ocr = probe(document.stored_path or document.file_name)
+            document.page_count = page_count
+            document.is_scanned = needs_ocr if document.doc_type == "PDF" else None
+        except Exception:  # noqa: BLE001 — labelling only, never fatal
+            return
+
     def _reader_for(self, path: str) -> DocumentReader:
         for reader in self.readers:
             if reader.supports(path):
                 return reader
         raise ExtractionFailed(f"no reader supports this file: {path}")
 
-    def _to_fields(self, run_id: str, structured) -> tuple[list[E.ExtractedField] , list[E.ExtractionRejection]]:
+    def _to_fields(
+        self, run_id: str, structured, document_id: str
+    ) -> tuple[list[E.ExtractedField], list[E.ExtractionRejection]]:
         """Schema validation (FR-07), expressed as a filter.
 
         A malformed proposal is dropped, not repaired. Repairing it would be
         the system inventing data — and an invented figure that clears the
         checks is precisely the silent false positive the whole thesis is
         about.
-
 
         Collect the rejections and attach them to the run, so the evaluation
         can distinguish "the model proposed nothing" from "the model proposed
@@ -217,7 +294,7 @@ class ExtractionService:
                     rejections.append(
                         E.ExtractionRejection(
                             raw_item=item,
-                            reason=f"invalid item code",
+                            reason="invalid item code",
                         )
                     )
                     continue
@@ -236,6 +313,7 @@ class ExtractionService:
                     item_code=code,
                     amount=amount,
                     extraction_id=run_id,
+                    document_id=document_id,
                     year=item.year,
                     source_page=item.source_page,
                     confidence=(
@@ -244,7 +322,7 @@ class ExtractionService:
                     status=E.PROPOSED,
                 )
             )
-        return fields , rejections
+        return fields, rejections
 
 
 def _utcnow():

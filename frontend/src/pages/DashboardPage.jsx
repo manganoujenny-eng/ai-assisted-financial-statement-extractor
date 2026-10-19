@@ -1,109 +1,461 @@
-/* FR-18 — the dashboard: value, status, source items, explanation.
+/* FR-15 to FR-20 — analysis dashboard.
  *
- * Note what each card shows and, more importantly, what it refuses to show.
- * A NOT_COMPUTABLE ratio is displayed with its reason, not hidden and not
- * shown as zero (BR-02). A ratio with no documented reference is stated
- * without judgement (BR-14). Those two refusals are the most defensible
- * things on this screen, and a jury will ask about them — so the interface
- * has to make them visible rather than tidy them away.
+ * Uses the existing GET /api/cases/{caseId}/analysis contract.
+ * Ratio values, reasons, inputs and interpretations come from the backend.
+ * No ratio is calculated in the frontend.
  */
 
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import * as api from '../api/client.js'
 import ChecksPanel from '../components/ChecksPanel.jsx'
+import AiCommentaryPanel from '../components/AiCommentaryPanel.jsx'
+import { labelByCode, useI18n } from '../i18n/index.jsx'
 
-function RatioCard({ ratio }) {
+function RatioCard({ ratio, onViewDetails }) {
+  const { t } = useI18n()
   const computed = ratio.status === 'COMPUTED'
+  const items = ratio.items_used || []
+
   return (
-    <div className="card" style={{ marginBottom: 0 }}>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
+    <article className="card dashboard-ratio-card">
+      <div className="ratio-card-top">
         <span className="code">{ratio.code}</span>
-        <span className={`pill ${computed ? 'neutral' : 'warn'}`}>
-          {computed ? ratio.unit : 'not computable'}
+
+        <span
+          className={`pill ${
+            computed ? 'ok' : 'warn'
+          }`}
+        >
+          {t(`ratioStatus.${ratio.status || 'UNKNOWN'}`)}
         </span>
       </div>
 
-      <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', margin: '6px 0 2px' }}>
+      <div className="ratio-value">
         {computed ? (
-          <span className="num">{ratio.value}</span>
+          <>
+            <span className="num">{ratio.value}</span>
+            {ratio.unit && (
+              <span className="ratio-unit">{ratio.unit}</span>
+            )}
+          </>
         ) : (
-          <span className="muted" style={{ fontSize: 18, fontWeight: 400 }}>—</span>
+          <span className="ratio-unavailable">—</span>
         )}
       </div>
-      <div className="muted" style={{ marginBottom: 10 }}>{ratio.name}</div>
 
-      {ratio.interpretation && (
-        <p style={{ margin: '0 0 10px', fontSize: 14 }}>{ratio.interpretation.text}</p>
+      <h3 className="ratio-name">{labelByCode(t, 'ratio', ratio.code, ratio.name)}</h3>
+
+      {!computed && (
+        <p className="ratio-reason">
+          {ratio.reason || t('dash.cannotCompute')}
+        </p>
       )}
 
-      {/* BR-04 — the items the value was built from travel with the value.
-          Also the most direct answer to "where does this number come from?",
-          which is the first question anyone asks of a financial indicator. */}
-      <div className="faint">
-        from {ratio.items_used.join(' · ') || '—'}
+      <div className="ratio-sources">
+        <span className="faint">{t('dash.sourceItems')}</span>
+        <p>
+          {items.length > 0 ? items.join(' · ') : t('dash.noSourceItems')}
+        </p>
       </div>
 
-      {ratio.interpretation?.reference_source && (
-        <details style={{ marginTop: 8 }}>
-          <summary className="faint" style={{ cursor: 'pointer' }}>reference applied</summary>
-          <p className="faint" style={{ marginTop: 6 }}>
-            {ratio.interpretation.reference_source}
+      <button
+        type="button"
+        onClick={() => onViewDetails(ratio)}
+      >
+        {computed ? t('checks.viewDetails') : t('dash.viewReason')}
+      </button>
+    </article>
+  )
+}
+
+function RatioDetails({ ratio, onClose }) {
+  const [showInterpretation, setShowInterpretation] = useState(false)
+  const { t } = useI18n()
+  const name = labelByCode(t, 'ratio', ratio.code, ratio.name)
+
+  const computed = ratio.status === 'COMPUTED'
+  const interpretation = ratio.interpretation
+  const items = ratio.items_used || []
+  const inputs = ratio.inputs || {}
+
+  return (
+    <section className="card ratio-details" id="ratio-details">
+      <div className="ratio-details-heading">
+        <div>
+          <p className="faint">{t('dash.ratioDetails')}</p>
+          <h2>{ratio.code} — {name}</h2>
+        </div>
+
+        <button type="button" onClick={onClose}>
+          {t('common.close')}
+        </button>
+      </div>
+
+      <div className="ratio-detail-summary">
+        <div>
+          <span className="faint">{t('myCases.value')}</span>
+          <div className="detail-value">
+            {computed
+              ? `${ratio.value ?? '—'}${ratio.unit ? ` ${ratio.unit}` : ''}`
+              : '—'}
+          </div>
+        </div>
+
+        <div>
+          <span className="faint">{t('users.status')}</span>
+          <p>
+            <span className={`pill ${computed ? 'ok' : 'warn'}`}>
+              {t(`ratioStatus.${ratio.status || 'UNKNOWN'}`)}
+            </span>
           </p>
-        </details>
+        </div>
+      </div>
+
+      {!computed && (
+        <div className="banner info">
+          <strong>{t('dash.whyUnavailable')}</strong>
+          <p>
+            {ratio.reason || t('dash.noReason')}
+          </p>
+        </div>
       )}
-    </div>
+
+      <h3>{t('dash.sourceItems')}</h3>
+      {items.length > 0 ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">{t('dash.noSourceItemsBackend')}</p>
+      )}
+
+      {Object.keys(inputs).length > 0 && (
+        <>
+          <h3>{t('dash.inputs')}</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>{t('dash.input')}</th>
+                <th style={{ textAlign: 'right' }}>{t('myCases.value')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(inputs).map(([name, value]) => (
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td className="num">
+                    {typeof value === 'object' && value !== null
+                      ? JSON.stringify(value)
+                      : String(value ?? '—')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <div className="interpretation-section">
+        <h3>{t('ai.kicker')}</h3>
+
+        {!interpretation ? (
+          <p className="muted">
+            {t('dash.noInterpretation')}
+          </p>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setShowInterpretation((current) => !current)}
+            >
+              {showInterpretation
+                ? t('dash.hideInterpretation')
+                : t('dash.viewInterpretation')}
+            </button>
+
+            {showInterpretation && (
+              <div className="interpretation-content">
+                <p>
+                  <strong>{t('dash.ratioLabel')}</strong> {ratio.code} — {name}
+                </p>
+                <p>
+                  <strong>{t('dash.valueLabel')}</strong>{' '}
+                  {computed
+                    ? `${ratio.value ?? '—'}${ratio.unit ? ` ${ratio.unit}` : ''}`
+                    : t('ratioStatus.NOT_COMPUTABLE')}
+                </p>
+
+                <p>{interpretation.text || t('dash.noInterpretationText')}</p>
+
+                {interpretation.reference_source && (
+                  <p>
+                    <strong>{t('dash.referenceApplied')}</strong>{' '}
+                    {interpretation.reference_source}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function YearComparison({ data }) {
+  /*
+   * Only display a comparison if the API explicitly provides one.
+   * The current dashboard response does not contain a comparison object.
+   */
+  const comparison = data.year_comparison
+  const { t } = useI18n()
+
+  return (
+    <section className="card">
+      <h2>{t('dash.yearComparison')}</h2>
+
+      {!comparison ? (
+        <p className="muted">
+          {t('dash.noComparison')}
+        </p>
+      ) : (
+        <>
+          <p className="faint">
+            {t('dash.comparedWith', {
+              current: comparison.current_year,
+              previous: comparison.previous_year,
+            })}
+          </p>
+
+          <div className="cases-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('myCases.ratio')}</th>
+                  <th className="num">{t('dash.currentYear')}</th>
+                  <th className="num">{t('dash.previousYear')}</th>
+                  <th className="num">{t('dash.change')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(comparison.ratios || []).map((item) => (
+                  <tr key={item.code}>
+                    <td>{labelByCode(t, 'ratio', item.code, item.name || item.code)}</td>
+                    <td className="num">{item.current_value ?? '—'}</td>
+                    <td className="num">{item.previous_value ?? '—'}</td>
+                    <td className="num">{item.change ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 
 export default function DashboardPage() {
   const { caseId } = useParams()
+
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [selectedRatio, setSelectedRatio] = useState(null)
+  const { t, formatDateTime } = useI18n()
 
   useEffect(() => {
-    api.getCaseAnalysis(caseId).then(setData).catch((err) => setError(err.message))
+    let cancelled = false
+
+    setData(null)
+    setError(null)
+    setSelectedRatio(null)
+
+    api.getCaseAnalysis(caseId)
+      .then((result) => {
+        if (!cancelled) setData(result)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [caseId])
 
-  if (error) return <div className="banner fail">{error}</div>
-  if (!data) return <p className="muted">Loading…</p>
+  function openRatio(ratio) {
+    setSelectedRatio(ratio)
+
+    // Move focus to the details section without opening another page.
+    requestAnimationFrame(() => {
+      document.getElementById('ratio-details')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
+  }
+
+  if (error) {
+    return <div className="banner fail">{error}</div>
+  }
+
+  if (!data) {
+    return <p className="muted">{t('dash.loading')}</p>
+  }
+
   if (!data.dataset) {
     return (
       <div className="banner info">
-        No validated dataset on this case yet. Ratios are computed from validated
-        data only (BR-01). <Link to="/">Back to the cases</Link>.
+        {t('dash.noDataset')}{' '}
+        <Link to="/">{t('dash.backToCases')}</Link>.
       </div>
     )
   }
 
+  const ratios = data.ratios || []
+
+  // Validation no longer requires every blocking check to pass, so a
+  // dataset can reach this page with known failures. Say so up front.
+  const failedBlockingChecks = (data.checks || []).filter(
+    (check) => !check.passed && check.severity === 'BLOCKING'
+  )
+  const computedCount = ratios.filter(
+    (ratio) => ratio.status === 'COMPUTED'
+  ).length
+  const unavailableCount = ratios.filter(
+    (ratio) => ratio.status === 'NOT_COMPUTABLE'
+  ).length
+
   return (
     <>
-      <h2 className="page-title">
-        {data.case.client} · {data.case.fiscal_year}
-      </h2>
-      <p className="page-subtitle">
-        Validated by {data.dataset.validated_by} on{' '}
-        {new Date(data.dataset.validated_at).toLocaleString()} ·{' '}
-        {data.dataset.item_count} items frozen
-      </p>
-
-      <div className="grid-ratios" style={{ marginBottom: 18 }}>
-        {data.ratios.map((ratio) => (
-          <RatioCard key={ratio.code} ratio={ratio} />
-        ))}
-      </div>
-
-      <ChecksPanel checks={data.checks} />
-
-      <div className="card">
-        <h2>Export</h2>
-        <div className="todo">
-          <strong>FR-19 — your exercise, and a late one.</strong> Export is a
-          &ldquo;should&rdquo;, not a &ldquo;must&rdquo;. Build it in week 6 if
-          weeks 3 to 5 went to plan, and not before: the arbitration rule of
-          dossier §3.3 says to cut the interface before the evaluation.
+      <div className="dashboard-header">
+        <div>
+          <p className="faint">{t('dash.kicker')}</p>
+          <h2 className="page-title">
+            {data.case.client} · {data.case.fiscal_year}
+          </h2>
+          <p className="page-subtitle">
+            {t('dash.subtitle')}
+          </p>
         </div>
+
+        <Link to="/" className="dashboard-back-link">
+          {t('dash.backToCases')}
+        </Link>
       </div>
+
+      {failedBlockingChecks.length > 0 && (
+        <div className="banner fail" style={{ fontSize: '1.05em' }}>
+          <strong>
+            ⚠{' '}
+            {t('dash.validatedWithFailures', {
+              count: failedBlockingChecks.length,
+              codes: failedBlockingChecks.map((check) => check.code).join(', '),
+            })}
+          </strong>{' '}
+          {t('dash.mayBeWrong')}
+        </div>
+      )}
+
+      <section className="card dataset-status-card">
+        <div>
+          <span className="faint">{t('dash.validatedDataset')}</span>
+          <h2>
+            <span className="pill ok">{t('dash.validatedPill')}</span>
+          </h2>
+          <p className="muted">
+            {t('dash.validatedBy', { name: data.dataset.validated_by || '—' })}
+          </p>
+          <p className="faint">
+            {data.dataset.validated_at
+              ? formatDateTime(data.dataset.validated_at)
+              : t('dash.noValidationDate')}
+          </p>
+        </div>
+
+        <div className="dataset-item-count">
+          <span className="faint">{t('dash.frozenItems')}</span>
+          <strong>{data.dataset.item_count ?? '—'}</strong>
+        </div>
+      </section>
+
+      <section className="dashboard-summary">
+        <div className="summary-stat">
+          <span className="faint">{t('dash.coreRatios')}</span>
+          <strong>{ratios.length}</strong>
+        </div>
+        <div className="summary-stat">
+          <span className="faint">{t('sup.computed')}</span>
+          <strong>{computedCount}</strong>
+        </div>
+        <div className="summary-stat">
+          <span className="faint">{t('sup.notComputable')}</span>
+          <strong>{unavailableCount}</strong>
+        </div>
+      </section>
+
+      <section className="dashboard-ratios-section">
+        <h2 className="section-title">{t('dash.coreFinancialRatios')}</h2>
+
+        {ratios.length === 0 ? (
+          <div className="banner info">
+            {t('dash.noRatios')}
+          </div>
+        ) : (
+          <div className="grid-ratios dashboard-ratio-grid">
+            {ratios.map((ratio) => (
+              <RatioCard
+                key={ratio.code}
+                ratio={ratio}
+                onViewDetails={openRatio}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {selectedRatio && (
+        <RatioDetails
+          key={selectedRatio.code}
+          ratio={selectedRatio}
+          onClose={() => setSelectedRatio(null)}
+        />
+      )}
+
+      <YearComparison data={data} />
+
+      <ChecksPanel checks={data.checks || []} />
+
+      <AiCommentaryPanel
+        caseId={caseId}
+        analysis={data.ai_analysis}
+        ratios={ratios}
+        onChange={(analysis) =>
+          setData((current) => ({ ...current, ai_analysis: analysis }))
+        }
+      />
+
+      <section className="card dashboard-export">
+        <div>
+          <h2>{t('dash.exportTitle')}</h2>
+          <p className="muted">
+            {t('dash.exportHint')}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="primary"
+          onClick={() => {
+            window.location.href = `/api/cases/${caseId}/export`
+          }}
+        >
+          {t('dash.exportButton')}
+        </button>
+      </section>
     </>
   )
 }

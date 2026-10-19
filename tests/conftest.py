@@ -13,8 +13,15 @@ and a single file with::
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Item 5 — the existing tests exercise business rules, not sign-in, so they
+# run with AUTH_REQUIRED off (names from the request, as before). Must be set
+# before `app` is imported: Config reads it when the class is defined. The
+# sign-in and role tests build their app with Config(auth_required=True).
+os.environ.setdefault("AUTH_REQUIRED", "false")
 
 import pytest
 

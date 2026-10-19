@@ -18,8 +18,44 @@ def extract_year_values(side_values, side_headers):
     return current_year, prior_year
 
 def find_side_start_columns(table):
-    header_row = table[0]
-    return [i for i, cell in enumerate(header_row) if cell == "REF"]
+    starts = _find_literal_ref_columns(table)
+    if starts:
+        return starts
+    # "REF" is only ever the header label for a column of two-letter
+    # SYSCOHADA codes (AA, AB, AC...) — on a page read through OCR, the
+    # label can get mangled while the codes beneath it still come through
+    # fine (a short, high-contrast run of capitals OCRs far more reliably
+    # than a whole word). Falling back to where those codes themselves
+    # cluster finds the same column find_side_start_columns always meant
+    # to find, just by its content instead of by its header text.
+    return _find_code_pattern_columns(table)
+
+
+def _find_literal_ref_columns(table):
+    for row in table:
+        starts = [i for i, cell in enumerate(row) if cell == "REF"]
+        if starts:
+            return starts
+    return []
+
+
+def _find_code_pattern_columns(table):
+    if not table:
+        return []
+
+    num_columns = max(len(row) for row in table)
+    counts = [0] * num_columns
+    for row in table:
+        for index, cell in enumerate(row):
+            if cell and CODE_PATTERN.match(str(cell).strip()):
+                counts[index] += 1
+
+    # A single coincidental match (a two-letter OCR fragment that happens
+    # to land in some column once) is not a column of codes — the same
+    # "it recurs, or it doesn't count" rule the OCR table-builder itself
+    # uses to tell a real column boundary from a one-off gap.
+    minimum_support = max(2, round(len(table) * 0.1))
+    return [index for index, count in enumerate(counts) if count >= minimum_support]
 
 
 def split_row_into_sides(row, side_starts):

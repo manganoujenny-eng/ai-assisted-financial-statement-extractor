@@ -46,6 +46,9 @@ class AnalysisCaseRow(Base):
     fiscal_year: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Added after the table existed: create_all() will NOT add it to your
+    # existing database — run backend/add_ai_analysis_schema.py once.
+    analyst: Mapped[str | None] = mapped_column(String(100), index=True)
 
     documents: Mapped[list["DocumentRow"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
@@ -54,10 +57,21 @@ class AnalysisCaseRow(Base):
 
 class DocumentRow(Base):
     __tablename__ = "document"
-    # The fingerprint is unique across the whole table, not per case: the
-    # point of NFR-08 is to avoid re-extracting bytes already seen, whoever
-    # uploaded them and whenever.
-    __table_args__ = (UniqueConstraint("sha256", name="uq_document_sha256"),)
+    # Scoped to (case_id, sha256), not sha256 alone — the same fix as
+    # DocumentRepository.find_by_sha256, at the layer that actually enforces
+    # it. A global UniqueConstraint on sha256 meant the Python-level fix
+    # (scoping the dedup *lookup* to case_id) only hid the bug on the
+    # InMemory adapter: on the real database, a second case uploading a
+    # byte-identical file (an empty template, say) still correctly got told
+    # "no existing document for you", tried to insert its own row, and the
+    # database rejected it with an IntegrityError on sha256 — the two
+    # adapters behaving differently on the same port is exactly the bug
+    # class this codebase keeps catching. NFR-08's goal (don't pay to
+    # re-extract bytes this case has already seen) is unaffected: it was
+    # never about bytes being unique *across clients*.
+    __table_args__ = (
+        UniqueConstraint("case_id", "sha256", name="uq_document_case_sha256"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     case_id: Mapped[str] = mapped_column(ForeignKey("analysis_case.id"), nullable=False)
@@ -71,12 +85,20 @@ class DocumentRow(Base):
 
     case: Mapped[AnalysisCaseRow] = relationship(back_populates="documents")
 
-
 class ExtractionRunRow(Base):
     __tablename__ = "extraction_run"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), nullable=False)
+    # A run now belongs to the CASE, not to one document — it is the result
+    # of reading every document attached to the case at the time it was
+    # started and merging their proposed fields (see ExtractionRun's
+    # docstring). document_ids is that run's own snapshot of which
+    # documents those were: a plain JSON list rather than a join table,
+    # because nothing here needs relational integrity on it — CaseService
+    # updates this list itself (via save()) when a document it names is
+    # deleted, the same way it already clears ExtractedFieldRow.document_id.
+    case_id: Mapped[str] = mapped_column(ForeignKey("analysis_case.id"), nullable=False)
+    document_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     engine: Mapped[str] = mapped_column(String(32), nullable=False)
     model: Mapped[str | None] = mapped_column(String(100))
     prompt_version: Mapped[str | None] = mapped_column(String(32))
@@ -97,6 +119,15 @@ class ExtractedFieldRow(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     extraction_id: Mapped[str] = mapped_column(
         ForeignKey("extraction_run.id"), nullable=False
+    )
+    # Which of the run's documents this one item came from — needed now
+    # that a run spans several documents, so the review screen can still
+    # show the right source file next to each field. SET NULL rather than
+    # a hard FK the delete would have to fight: CaseService already nulls
+    # this itself before deleting a document (see its docstring), and this
+    # is only the database's own backstop for that same rule.
+    document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("document.id", ondelete="SET NULL")
     )
     item_code: Mapped[str] = mapped_column(String(2), nullable=False)
     # Numeric(18, 2), never a float column: the equilibrium check tests
@@ -188,3 +219,50 @@ class AuditLogRow(Base):
     author: Mapped[str] = mapped_column(String(100), nullable=False)
     at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     detail: Mapped[dict | None] = mapped_column(JSON)
+
+
+
+class AiAnalysisRow(Base):
+    """LLM commentary on one validated dataset (item 4). New table, so
+    create_all() creates it by itself on the next start.
+
+    No foreign keys on purpose: CaseService.delete_case removes these rows
+    first (AiAnalysisRepository.delete_for_case), and a commentary must
+    never be the reason a dataset cannot be deleted.
+    """
+
+    __tablename__ = "ai_analysis"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    dataset_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    generated_sections: Mapped[dict | None] = mapped_column(JSON)
+    sections: Mapped[dict | None] = mapped_column(JSON)
+    model: Mapped[str | None] = mapped_column(String(100))
+    prompt_version: Mapped[str | None] = mapped_column(String(32))
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 4))
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    approved_by: Mapped[str | None] = mapped_column(String(100))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+
+class UserRow(Base):
+    """Item 5 — the people who sign in, with their role.
+
+    Named app_user, not "user": USER is a reserved word in PostgreSQL.
+    New table, so create_all() creates it; add_users_schema.py also does,
+    and creates the first supervisor.
+    """
+
+    __tablename__ = "app_user"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    full_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

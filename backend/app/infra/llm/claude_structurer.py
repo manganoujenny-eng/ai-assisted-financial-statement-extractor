@@ -70,14 +70,27 @@ class ClaudeStructurer:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "claude-sonnet-5",
+        model: str = "claude-opus-5-5",
         cache: ResponseCache | None = None,
         max_cost_usd: Decimal = Decimal("5.00"),
+        input_usd_per_mtok: Decimal = Decimal("4.00"),
+        output_usd_per_mtok: Decimal = Decimal("20.00"),
+        effort: str = "medium",
+        max_tokens: int = 16000,
     ) -> None:
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self.model = model
         self.cache = cache or ResponseCache()
         self.max_cost_usd = max_cost_usd
+        # Opus 5.5 prices by default ($4 / $20 per million tokens). Thinking
+        # tokens are billed as output, so they are in output_tokens below.
+        self.input_usd_per_mtok = input_usd_per_mtok
+        self.output_usd_per_mtok = output_usd_per_mtok
+        self.effort = effort
+        # Opus 5.5 always thinks first, and thinking counts toward
+        # max_tokens. 4096 left too little room for the JSON on a long
+        # package; the budget cap (max_cost_usd) is what limits spending.
+        self.max_tokens = max_tokens
         self.spent_usd = Decimal("0")
 
     # --- the part that is written for you -------------------------------
@@ -101,9 +114,10 @@ class ClaudeStructurer:
                     attempt,
                     str(last_error) if last_error else None,
                 )
+                # Counted before parsing: a rejected answer was billed too.
+                self.spent_usd += cost
                 result = self._parse(raw_response, cost=cost)
                 self.cache.put(fingerprint, raw_response)
-                self.spent_usd += cost
                 return result
             except (ValueError, json.JSONDecodeError) as exc:
                 last_error = exc
@@ -163,71 +177,66 @@ class ClaudeStructurer:
         attempt: int,
         validation_error: str | None = None,
     ) -> tuple[str, Decimal]:
-
-     prompt_path = os.path.join(
+        prompt_path = os.path.join(
             os.path.dirname(__file__),
             "prompts",
             f"{PROMPT_VERSION}.md",
         )
+        with open(prompt_path, "r", encoding="utf-8") as file:
+            prompt_template = file.read()
 
-     with open(prompt_path ,"r" , encoding="utf-8") as file:
-           prompt_template = file.read()
+        prompt = prompt_template.replace(
+            "<!-- The adapter inserts RawDocument.full_text here. -->",
+            document.full_text,
+        )
 
-     prompt = prompt_template.replace(
-           "<!-- The adapter inserts RawDocument.full_text here. -->",
-           document.full_text,
-       )
+        if attempt == 2:
+            if validation_error is None:
+                raise ValueError("retry attempt requires a validation error")
+            prompt += (
+                "\n\nYour previous response failed validation for this reason:\n"
+                f"{validation_error}\n"
+                "Return corrected JSON only."
+            )
 
-     if attempt == 2:
-           if validation_error is None:
-               raise ValueError("retry attempt requires a validation error")
+        client = anthropic.Anthropic(api_key=self.api_key)
 
-           prompt += (
-               "\n\nYour previous response failed validation for this reason:\n"
-               f"{validation_error}\n"
-               "Return corrected JSON only."
-         )
+        # Opus 5.5 rules (migration guide): no temperature/top_p/top_k, no
+        # thinking budget, no assistant prefill. Thinking is adaptive and
+        # always on; "effort" is the only knob. The JSON shape is enforced
+        # by structured outputs (output_config.format).
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+            output_config={
+                "effort": self.effort,
+                "format": {
+                    "type": "json_schema",
+                    "schema": OUTPUT_SCHEMA,
+                },
+            },
+        )
 
+        # The cost is due whatever the answer is, so count it first.
+        cost = (
+            Decimal(response.usage.input_tokens) * self.input_usd_per_mtok
+            + Decimal(response.usage.output_tokens) * self.output_usd_per_mtok
+        ) / Decimal(1_000_000)
 
-     client = anthropic.Anthropic(api_key=self.api_key)
+        if response.stop_reason == "refusal":
+            # Not retried: the same document would be refused again.
+            self.spent_usd += cost
+            raise RuntimeError("the model declined to process this document")
+        if response.stop_reason == "max_tokens":
+            self.spent_usd += cost
+            raise ValueError(
+                "the answer was cut off at max_tokens; the document may be too long"
+            )
 
-     response = client.messages.create(
-           model=self.model,
-           max_tokens=4096,
-           messages=[
-               {
-                   "role": "user",
-                   "content": prompt,
-               }
-           ],
-           output_config={
-               "format": {
-                   "type": "json_schema",
-                   "schema": OUTPUT_SCHEMA,
-               }
-           },
-       )
-
-     #EXTRACT THE JSON TEXT
-     raw_response = next(
-           block.text
-           for block in response.content
-           if block.type == "text"
-       )
-
-     #GET THE ACTUAL TOKEN COUNT
-     input_tokens = response.usage.input_tokens
-     output_tokens = response.usage.output_tokens
-
-     #CALCULATE THE COST
-     input_cost = (
-               Decimal(input_tokens) * Decimal("2.00") / Decimal("1000000")
-       )
-
-     output_cost = (
-               Decimal(output_tokens) * Decimal("10.00") / Decimal("1000000")
-       )
-
-     cost = input_cost + output_cost
-
-     return raw_response, cost
+        # Thinking blocks come first on Opus 5.5: pick the text blocks by
+        # type, never content[0].
+        raw_response = "".join(
+            block.text for block in response.content if block.type == "text"
+        )
+        return raw_response, cost

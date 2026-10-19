@@ -32,6 +32,12 @@ class InMemoryCaseRepository:
     def save(self, case: E.AnalysisCase) -> None:
         self._cases[case.id] = case
 
+    # CaseService only calls this once every document attached to the case
+    # has already gone through DocumentRepository.delete — same contract as
+    # SqlCaseRepository.delete.
+    def delete(self, case_id: str) -> None:
+        self._cases.pop(case_id, None)
+
 
 class InMemoryDocumentRepository:
     def __init__(self) -> None:
@@ -43,8 +49,25 @@ class InMemoryDocumentRepository:
     def get(self, document_id: str) -> E.SourceDocument | None:
         return self._documents.get(document_id)
 
-    def find_by_sha256(self, sha256: str) -> E.SourceDocument | None:
-        return next((d for d in self._documents.values() if d.sha256 == sha256), None)
+    def find_by_sha256(self, sha256: str , case_id: str) -> E.SourceDocument | None:
+        return next(
+            (
+                d
+                for d in self._documents.values()
+                if d.sha256 == sha256 and d.case_id == case_id
+            ),
+            None,
+        )
+
+    def save(self , document: E.SourceDocument) -> None:
+        self._documents[document.id] = document
+
+    # Same contract as SqlDocumentRepository.delete: CaseService has
+    # already removed this document's id from every ExtractionRun that
+    # named it, and cleared document_id on every ExtractedField that came
+    # from it, before this is ever called.
+    def delete(self, document_id: str) -> None:
+        self._documents.pop(document_id, None)
 
 
 class InMemoryExtractionRepository:
@@ -60,14 +83,22 @@ class InMemoryExtractionRepository:
     def save(self, run: E.ExtractionRun) -> None:
         self._runs[run.id] = run
 
-    def list_for_document(self, document_id: str) -> list[E.ExtractionRun]:
-        return [r for r in self._runs.values() if r.document_id == document_id]
+    # A run now spans every document attached to the case at the time it
+    # was started (see ExtractionRun's docstring), so this is keyed by
+    # case_id rather than document_id.
+    def list_for_case(self, case_id: str) -> list[E.ExtractionRun]:
+        return [r for r in self._runs.values() if r.case_id == case_id]
 
     def find_by_field(self, field_id: str) -> E.ExtractionRun | None:
         return next(
             (r for r in self._runs.values() if any(f.id == field_id for f in r.fields)),
             None,
         )
+
+    # The caller deletes every ValidatedDataset for this run first — this
+    # only ever removes a run with nothing left pointing at it.
+    def delete(self, run_id: str) -> None:
+        self._runs.pop(run_id, None)
 
 
 class InMemoryDatasetRepository:
@@ -81,10 +112,27 @@ class InMemoryDatasetRepository:
         return self._datasets.get(dataset_id)
 
     def find_by_extraction(self, extraction_id: str) -> E.ValidatedDataset | None:
-        return next(
-            (d for d in self._datasets.values() if d.extraction_id == extraction_id),
-            None,
-        )
+        # Mirrors SqlDatasetRepository.find_by_extraction: an extraction can
+        # be validated more than once (reopen -> correct -> re-validate keeps
+        # the earlier snapshot rather than deleting it), so "the" dataset for
+        # an extraction is the most recently validated one, not whichever
+        # this dict happens to yield first.
+        matches = [d for d in self._datasets.values() if d.extraction_id == extraction_id]
+        if not matches:
+          return None
+        return max(matches, key=lambda d: d.validated_at)
+
+    def list_for_extraction(self, extraction_id: str) -> list[E.ValidatedDataset]:
+        # Plural on purpose, unlike find_by_extraction: see
+        # SqlDatasetRepository.list_for_extraction for why CaseService needs
+        # every one of a run's datasets, not just the latest.
+        return [d for d in self._datasets.values() if d.extraction_id == extraction_id]
+
+    def list(self) -> list[E.ValidatedDataset]:
+        return list(self._datasets.values())
+
+    def delete(self, dataset_id: str) -> None:
+        self._datasets.pop(dataset_id, None)
 
 
 class InMemoryAuditLog:
@@ -103,3 +151,54 @@ class InMemoryAuditLog:
 
     def all(self) -> list[E.AuditEntry]:
         return list(self._entries)
+
+
+
+class InMemoryAiAnalysisRepository:
+    def __init__(self) -> None:
+        self._analyses: dict[str, E.AiAnalysis] = {}
+
+    def add(self, analysis: E.AiAnalysis) -> None:
+        self._analyses[analysis.id] = analysis
+
+    def get(self, analysis_id: str) -> E.AiAnalysis | None:
+        return self._analyses.get(analysis_id)
+
+    def save(self, analysis: E.AiAnalysis) -> None:
+        self._analyses[analysis.id] = analysis
+
+    def latest_for_dataset(self, dataset_id: str) -> E.AiAnalysis | None:
+        matches = [a for a in self._analyses.values() if a.dataset_id == dataset_id]
+        return max(matches, key=lambda a: a.generated_at) if matches else None
+
+    def list_for_case(self, case_id: str) -> list[E.AiAnalysis]:
+        return sorted(
+            (a for a in self._analyses.values() if a.case_id == case_id),
+            key=lambda a: a.generated_at,
+        )
+
+    def delete_for_case(self, case_id: str) -> None:
+        for analysis_id in [a.id for a in self._analyses.values() if a.case_id == case_id]:
+            del self._analyses[analysis_id]
+
+
+
+class InMemoryUserRepository:
+    def __init__(self) -> None:
+        self._users: dict[str, E.User] = {}
+
+    def add(self, user: E.User) -> None:
+        self._users[user.id] = user
+
+    def get(self, user_id: str) -> E.User | None:
+        return self._users.get(user_id)
+
+    def get_by_username(self, username: str) -> E.User | None:
+        wanted = (username or "").strip().lower()
+        return next((u for u in self._users.values() if u.username.lower() == wanted), None)
+
+    def list(self) -> list[E.User]:
+        return sorted(self._users.values(), key=lambda u: u.full_name.lower())
+
+    def save(self, user: E.User) -> None:
+        self._users[user.id] = user

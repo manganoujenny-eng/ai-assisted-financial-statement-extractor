@@ -26,10 +26,12 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from .entities import (
+    AiAnalysis,
     AnalysisCase,
     AuditEntry,
     ExtractionRun,
     SourceDocument,
+    User,
     ValidatedDataset,
 )
 
@@ -125,26 +127,56 @@ class CaseRepository(Protocol):
     def get(self, case_id: str) -> AnalysisCase | None: ...
     def list(self) -> list[AnalysisCase]: ...
     def save(self, case: AnalysisCase) -> None: ...
+    # CaseService is the only caller, and only once it has already removed
+    # every document attached to this case (each one through
+    # DocumentRepository.delete, which clears its own extraction history
+    # first) — so this never has to cascade anything itself. One row, one
+    # method, same discipline as every other repository here.
+    def delete(self, case_id: str) -> None: ...
 
 
 @runtime_checkable
 class DocumentRepository(Protocol):
     def add(self, document: SourceDocument) -> None: ...
     def get(self, document_id: str) -> SourceDocument | None: ...
-    def find_by_sha256(self, sha256: str) -> SourceDocument | None: ...
-
+    # Scoped to case_id on purpose (FR-02/NFR-08): the fingerprint says two
+    # uploads are the same bytes, not that they are the same client's
+    # document. Dropping case_id here was the bug — it let a second case
+    # that happened to upload a byte-identical file (an empty template is
+    # the realistic example) silently receive the FIRST case's document,
+    # case_id unchanged, with nothing of its own ever attached to it.
+    def find_by_sha256(self, sha256: str, case_id: str) -> SourceDocument | None: ...
+    def save(self, document: SourceDocument) -> None: ...
+    # Same contract as CaseRepository.delete: the caller (CaseService) has
+    # already deleted every ExtractionRun for this document (and, through
+    # ExtractionRepository.delete, every ValidatedDataset for each of those
+    # runs) before this is ever called — a document is never deleted out
+    # from under rows that still reference it.
+    def delete(self, document_id: str) -> None: ...
 
 @runtime_checkable
 class ExtractionRepository(Protocol):
     def add(self, run: ExtractionRun) -> None: ...
+
     def get(self, run_id: str) -> ExtractionRun | None: ...
+
     def save(self, run: ExtractionRun) -> None: ...
-    def list_for_document(self, document_id: str) -> list[ExtractionRun]: ...
+    # A run now spans every document attached to the case at the time it
+    # was started (see ExtractionRun's docstring) — so "the runs behind this
+    # case" is the lookup every caller actually needs, not "the runs behind
+    # this one document" any more.
+    def list_for_case(self, case_id: str) -> list[ExtractionRun]: ...
     # Added to the port on purpose: PATCH /api/fields/{id} identifies a field
     # without naming its run (dossier §17.1), so the port must be able to
     # answer "which run owns this field?". A port grows when a use case needs
     # it to — not before, and never to suit a particular database.
     def find_by_field(self, field_id: str) -> ExtractionRun | None: ...
+    # The caller deletes every ValidatedDataset for this run first (via
+    # DatasetRepository.list_for_extraction + delete) — this only ever
+    # removes a run with nothing left pointing at it. ExtractedFieldRow is
+    # this run's own child row (cascade="all, delete-orphan" on
+    # ExtractionRunRow.fields already), so nothing extra is needed for it.
+    def delete(self, run_id: str) -> None: ...
 
 
 @runtime_checkable
@@ -152,6 +184,14 @@ class DatasetRepository(Protocol):
     def add(self, dataset: ValidatedDataset) -> None: ...
     def get(self, dataset_id: str) -> ValidatedDataset | None: ...
     def find_by_extraction(self, extraction_id: str) -> ValidatedDataset | None: ...
+    # Plural on purpose, unlike find_by_extraction: an extraction can be
+    # validated more than once (reopen -> correct -> re-validate keeps the
+    # earlier snapshot), so deleting "the" dataset for a run is wrong by
+    # construction — CaseService needs every one of them before the run
+    # itself can be deleted without leaving an orphaned row behind.
+    def list_for_extraction(self, extraction_id: str) -> list[ValidatedDataset]: ...
+    def list(self) -> list[ValidatedDataset]: ...
+    def delete(self, dataset_id: str) -> None: ...
 
 
 @runtime_checkable
@@ -160,3 +200,50 @@ class AuditLog(Protocol):
 
     def record(self, entry: AuditEntry) -> None: ...
     def list_for(self, entity: str, entity_id: str) -> list[AuditEntry]: ...
+
+
+
+# ==========================================================================
+# AI commentary
+# ==========================================================================
+@dataclass
+class AnalysisDraft:
+    """What a commentary writer hands back. Sections only, no figures.
+
+    sections = {"overview": str, "ratios": {code: str}, "checks": str,
+                "comparison": str, "attention": [str]}
+    """
+
+    sections: dict
+    model: str | None = None
+    prompt_version: str | None = None
+    cost_usd: Decimal | None = None
+
+
+class AnalysisWriter(Protocol):
+    """Writes commentary on figures that are already computed and validated.
+
+    It receives figures only (no document, no client name) and never
+    computes anything the rule-based engine has not already computed.
+    """
+
+    def write(self, payload: dict) -> AnalysisDraft: ...
+
+
+class AiAnalysisRepository(Protocol):
+    def add(self, analysis: AiAnalysis) -> None: ...
+    def get(self, analysis_id: str) -> AiAnalysis | None: ...
+    def save(self, analysis: AiAnalysis) -> None: ...
+    #: The most recent one for this dataset, whatever its status.
+    def latest_for_dataset(self, dataset_id: str) -> AiAnalysis | None: ...
+    def list_for_case(self, case_id: str) -> list[AiAnalysis]: ...
+    def delete_for_case(self, case_id: str) -> None: ...
+
+
+class UserRepository(Protocol):
+    def add(self, user: User) -> None: ...
+    def get(self, user_id: str) -> User | None: ...
+    #: Case-insensitive.
+    def get_by_username(self, username: str) -> User | None: ...
+    def list(self) -> list[User]: ...
+    def save(self, user: User) -> None: ...
