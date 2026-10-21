@@ -8,10 +8,10 @@ Two things happen here, and they are different in nature:
    because the domain layer needs nothing to run, and it produces the item x
    ratio sensitivity matrix the firm can reuse after the internship.
 
-2. **Campaign measurement against ground truth** (§18.1) — *your exercise*.
-   Field-level accuracy, ratio-level accuracy, the amplification coefficient,
-   item criticality, and above all the silent false positives. The formulas
-   are written out in the docstrings; the corpus is yours to build in W2.
+2. **Campaign measurement against ground truth** (§18.1) — week 7,
+   exercises 16 to 19: silent false positives, field-level accuracy,
+   ratio-level accuracy and the amplification coefficient. Each compares
+   one extraction with its hand-made ground truth (the W2 corpus).
 
 Run the sensitivity matrix the day R2..R5 are implemented, before the corpus
 exists. You will already be able to see which item carries the most risk —
@@ -21,7 +21,7 @@ and that single table will change how you spend weeks 3 to 7.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from ..domain.checks import has_blocking_failure, run_all
 from ..domain.ratios import COMPUTED, compute_all
@@ -159,80 +159,146 @@ class EvaluationService:
                             item_code=item_code,
                             ratio_code=ratio_code,
                             perturbation=perturbation,
-                            baseline_value=base_result.value,
-                            perturbed_value=new_result.value,
+                            baseline_value=base_result.measured,
+                            perturbed_value=new_result.measured,
                             relative_deviation=deviation,
                             intercepted_by_checks=intercepted,
                         )
                     )
         return matrix
 
-    # --- §18.1, YOUR EXERCISES ------------------------------------------
-    def field_accuracy(self, extracted: FinancialStatement, truth: FinancialStatement) -> Decimal:
-        """Share of extracted fields whose amount matches ground truth exactly.
-
-        TO IMPLEMENT. Two decisions to make before you write a line, and both
-        belong in the thesis:
-
-        * an item present in the truth and absent from the extraction — does
-          it count as an error, or is it outside the denominator? (Answer:
-          it must count, otherwise an extractor that returns one correct
-          field scores 100 %.)
-        * "exactly" means exactly. Do not introduce a tolerance here without
-          writing down why, because ratio-level accuracy already has one
-          (one per cent) and mixing the two conventions makes the
-          amplification coefficient meaningless.
-        """
-        raise NotImplementedError("field_accuracy — see the docstring")
-
-    def ratio_accuracy(
-        self, extracted: FinancialStatement, truth: FinancialStatement
-    ) -> Decimal:
-        """Share of ratios within one per cent of the ground-truth value.
-
-        TO IMPLEMENT. Careful with the NOT_COMPUTABLE cases: a ratio that is
-        NOT_COMPUTABLE in both runs agrees with the truth — it is not an
-        error. A ratio computable in one and not the other is an error, and
-        an interesting one: it means the extraction lost a required item.
-        """
-        raise NotImplementedError("ratio_accuracy — see the docstring")
-
-    def amplification_coefficient(
-        self, field_accuracy: Decimal, ratio_accuracy: Decimal
-    ) -> Decimal | None:
-        """Ratio-level error rate divided by field-level error rate.
-
-        TO IMPLEMENT — three lines, and the headline number of the thesis.
-        Error rate is ``1 - accuracy``. Above 1 means the chain amplifies:
-        a given proportion of wrong fields produces a larger proportion of
-        wrong indicators. Below 1 means it absorbs.
-
-        Guard the zero denominator (a perfect extraction has an error rate of
-        zero and no amplification is defined) — and notice that you already
-        know how to express that: a reasoned absence of value, exactly like
-        BR-03.
-        """
-        raise NotImplementedError("amplification_coefficient — see the docstring")
+    # --- §18.1, campaign measurement against ground truth ---------------
+    #
+    # The four measurements compare ONE extraction with ONE ground truth.
+    # Decisions taken (each one belongs in the thesis):
+    #
+    #   * The ground truth defines what is judged. It lists the required
+    #     items (W2); an extra line the extractor also read has no reference
+    #     value, so it is outside every denominator.
+    #   * A field is right only if its amount is EXACTLY the truth's (to the
+    #     franc cent, BR-15). The only tolerance is the 1 % on ratios.
+    #   * A missing item is an error for field accuracy, but NOT a silent
+    #     false positive: CHK004 blocks the case and the ratio says
+    #     NOT_COMPUTABLE, so the absence is visible.
 
     def silent_false_positives(
         self, extracted: FinancialStatement, truth: FinancialStatement
     ) -> list[str]:
-        """Wrong values that passed every automated check. §18.1.
+        """Exercise 16 — wrong values that passed every automated check. §18.1.
 
-        TO IMPLEMENT, and implement this one first. It is the indicator the
-        dossier calls "the most important of all": an error that clears the
-        checks and ends up in a ratio shown to a client.
+        The indicator the dossier calls "the most important of all": an
+        error that clears the checks and ends up in a ratio shown to a client.
 
-        Method: take the items where extraction and truth disagree; run the
-        checks on the extracted statement; if no blocking check fails, every
-        one of those disagreements is silent. Return their codes.
+        1. the items where extraction and truth disagree: present in both,
+           with a different amount (an absence is visible, see above);
+        2. run the checks on the EXTRACTED statement — the only one the
+           system ever sees;
+        3. if a blocking check fails, the case cannot be validated and an
+           analyst has to look at it: nothing is silent. Otherwise every
+           disagreement is silent.
+
+        Returns the codes, sorted. Two compensating errors (BK +100,
+        BT -100) are both returned: that is exactly the case the checks
+        cannot see.
         """
-        raise NotImplementedError("silent_false_positives — see the docstring")
+        wrong = _wrong_values(extracted, truth)
+        if not wrong:
+            return []
+        if has_blocking_failure(run_all(extracted)):
+            return []
+        return wrong
+
+    def field_accuracy(self, extracted: FinancialStatement, truth: FinancialStatement) -> Decimal:
+        """Exercise 17 — share of ground-truth fields extracted exactly.
+
+            right fields / fields in the ground truth
+
+        A field missing from the extraction counts as wrong — otherwise an
+        extractor returning one correct field would score 100 %.
+        """
+        if not len(truth):
+            raise ValueError("the ground truth is empty: nothing to measure")
+        right = sum(
+            1
+            for code in truth
+            if extracted.get(code) is not None and extracted[code] == truth[code]
+        )
+        return Decimal(right) / Decimal(len(truth))
+
+    def ratio_accuracy(
+        self, extracted: FinancialStatement, truth: FinancialStatement
+    ) -> Decimal:
+        """Exercise 18 — share of ratios within 1 % of the ground-truth value.
+
+        For each ratio of the registry:
+
+        * NOT_COMPUTABLE in both        -> right (the same reasoned absence);
+        * computable in one side only   -> wrong (a required item was lost,
+          or invented);
+        * computed in both              -> right if |e - t| <= 1 % of |t|
+          (when t is 0, only e = 0 is right).
+        """
+        mine = {r.code: r for r in compute_all(extracted)}
+        reference = compute_all(truth)
+        right = sum(1 for t in reference if _ratio_agrees(mine.get(t.code), t))
+        return Decimal(right) / Decimal(len(reference))
+
+    def amplification_coefficient(
+        self, field_accuracy: Decimal, ratio_accuracy: Decimal
+    ) -> Decimal | None:
+        """Exercise 19 — ratio error rate / field error rate. The headline number.
+
+        Above 1 the chain amplifies (a share of wrong fields produces a larger
+        share of wrong indicators); below 1 it absorbs. A perfect extraction
+        has an error rate of zero: no amplification is defined, so the answer
+        is a reasoned absence (None), like BR-03. Rounded to two decimals:
+        it is a number to report, and 14/15 has no exact decimal form.
+        """
+        field_error = Decimal(1) - Decimal(field_accuracy)
+        if field_error == 0:
+            return None
+        ratio_error = Decimal(1) - Decimal(ratio_accuracy)
+        return (ratio_error / field_error).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+#: Ratio-level tolerance of §18.1: one per cent of the ground-truth value.
+RATIO_TOLERANCE = Decimal("0.01")
+
+
+def _wrong_values(extracted: FinancialStatement, truth: FinancialStatement) -> list[str]:
+    """Ground-truth items extracted with a different amount (not missing)."""
+    return sorted(
+        code
+        for code in truth
+        if extracted.get(code) is not None and extracted[code] != truth[code]
+    )
+
+
+def _ratio_agrees(extracted, truth) -> bool:
+    """Both sides compared on their UNROUNDED value (``measured``).
+
+    Rounded to one decimal, R2 = 0.964 and R2 = 0.955 both show 1.0 and
+    would "agree" although they are 0.9 % apart — and 1.04 vs 1.05 would
+    "disagree" on display while being within tolerance. The 1 % tolerance
+    is a statement about the numbers, not about their display.
+    """
+    if extracted is None:
+        return truth.status != COMPUTED
+    if truth.status != COMPUTED or extracted.status != COMPUTED:
+        return truth.status == extracted.status
+    t, e = truth.measured, extracted.measured
+    if t is None or e is None:
+        return t is None and e is None
+    if t == 0:
+        return e == 0
+    return abs(e - t) <= RATIO_TOLERANCE * abs(t)
 
 
 def _relative_deviation(base, perturbed) -> Decimal | None:
+    """Measured on the unrounded values: see ``RatioResult.exact``."""
     if base.status != COMPUTED or perturbed.status != COMPUTED:
         return None
-    if base.value is None or perturbed.value is None or base.value == 0:
+    b, p = base.measured, perturbed.measured
+    if b is None or p is None or b == 0:
         return None
-    return abs(perturbed.value - base.value) / abs(base.value)
+    return abs(p - b) / abs(b)

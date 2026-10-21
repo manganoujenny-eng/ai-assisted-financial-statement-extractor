@@ -205,3 +205,19 @@ class InMemoryUserRepository:
 
     def delete(self, user_id: str) -> None:
         self._users.pop(user_id, None)
+
+
+
+class InMemoryEvaluationRepository:
+    def __init__(self) -> None:
+        self._campaigns: dict[str, E.EvaluationCampaign] = {}
+
+    def add(self, campaign: E.EvaluationCampaign) -> None:
+        self._campaigns[campaign.id] = campaign
+
+    def get(self, campaign_id: str) -> E.EvaluationCampaign | None:
+        return self._campaigns.get(campaign_id)
+
+    def list(self, kind: str | None = None) -> list[E.EvaluationCampaign]:
+        found = [c for c in self._campaigns.values() if kind is None or c.kind == kind]
+        return sorted(found, key=lambda c: c.run_at, reverse=True)

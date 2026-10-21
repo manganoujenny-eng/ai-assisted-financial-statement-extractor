@@ -1271,20 +1271,48 @@ def export_case(case_id: str):
     ), 404
 
 # ==========================================================================
-# Evaluation — Part D
+# Evaluation — Part D (week 7). Every campaign is stored (exercise 20).
 # ==========================================================================
+def _campaign_json(campaign: E.EvaluationCampaign, full: bool = True) -> dict:
+    s = campaign.summary or {}
+    silent = s.get("silent_false_positives")
+    body = {
+        "id": campaign.id,
+        "kind": campaign.kind,
+        "run_at": campaign.run_at.isoformat() if campaign.run_at else None,
+        "author": campaign.author,
+        "engine": campaign.engine,
+        "corpus": campaign.corpus,
+        "note": campaign.note,
+        "headline": {
+            "packages": s.get("packages"),
+            "evaluated": s.get("evaluated"),
+            "field_accuracy": s.get("field_accuracy"),
+            "ratio_accuracy": s.get("ratio_accuracy"),
+            "amplification": s.get("amplification"),
+            "silent_false_positives": len(silent) if isinstance(silent, list) else None,
+            "interception_rate": s.get("interception_rate"),
+        },
+    }
+    if full:
+        body.update(summary=s, inputs=campaign.inputs, packages=campaign.packages)
+    return body
+
+
 @bp.post("/evaluations")
 def run_evaluation():
     """POST /api/evaluations — FR-21, the sensitivity campaign of §19.2.
 
     Give it a ground-truth statement and it perturbs every item, recomputes
     every ratio, and reports what moved and what the checks would have caught.
+    The campaign is stored: the answer carries its ``id``.
 
     Body::
 
         {"ground_truth": {"BK": "100", "BT": "20", ...},
          "items": ["CP", "XI"],                 # optional, defaults to all
-         "perturbations": ["0.01", "0.05", "0.10"]}   # optional
+         "perturbations": ["0.01", "0.05", "0.10"],   # optional
+         "note": "RP001 before the XB check"}         # optional
     """
     c = container()
     payload = request.get_json(silent=True) or {}
@@ -1305,15 +1333,67 @@ def run_evaluation():
         **({"perturbations": perturbations} if perturbations else {}),
     )
     interception = matrix.interception_rate()
+    result = {
+        "cells": matrix.to_rows(),
+        "criticality": {
+            code: str(matrix.criticality(code))
+            for code in (items or sorted(ground_truth.codes()))
+        },
+        "interception_rate": str(interception) if interception is not None else None,
+    }
+    campaign = E.EvaluationCampaign(
+        kind=E.CAMPAIGN_SENSITIVITY,
+        summary=result,
+        author=actor(payload.get("author"), default="evaluation"),
+        note=(str(payload["note"]).strip() or None) if payload.get("note") else None,
+        inputs={
+            "ground_truth": {code: str(ground_truth[code].value) for code in sorted(ground_truth.codes())},
+            "items": list(items) if items else None,
+            "perturbations": [str(p) for p in perturbations] if perturbations else None,
+        },
+    )
+    c.evaluations.add(campaign)
+    return jsonify({**result, "id": campaign.id, "run_at": campaign.run_at.isoformat()}), 201
+
+
+@bp.post("/evaluations/corpus")
+def run_corpus_evaluation():
+    """POST /api/evaluations/corpus — the week 7 campaign over the corpus.
+
+    The same campaign as ``backend/evaluate_corpus.py``, started from the
+    API, on the server's corpus folder (CORPUS_DIR in .env, else
+    data/corpus — never a path sent by the browser). Supervisors only: it
+    reads every package, and the result is quoted in the thesis.
+    Body (optional): {"note": "..."}. Answers the stored campaign.
+    """
+    require_supervisor()
+    from ..services.corpus_campaign import DEFAULT_CORPUS, run_campaign, to_entity
+
+    c = container()
+    payload = request.get_json(silent=True) or {}
+    corpus = os.environ.get("CORPUS_DIR") or DEFAULT_CORPUS
+    try:
+        result = run_campaign(corpus)
+    except FileNotFoundError as exc:
+        return jsonify({"error": "not_found", "detail": str(exc)}), 404
+    campaign = to_entity(
+        result,
+        author=actor(payload.get("author"), default="evaluation"),
+        note=(str(payload["note"]).strip() or None) if payload.get("note") else None,
+    )
+    c.evaluations.add(campaign)
+    return jsonify(_campaign_json(campaign)), 201
+
+
+@bp.get("/evaluations")
+def list_evaluations():
+    """GET /api/evaluations — every stored campaign, newest first, headline
+    figures only. ``?kind=CORPUS`` or ``?kind=SENSITIVITY`` filters."""
+    kind = (request.args.get("kind") or "").strip().upper() or None
+    if kind and kind not in E.CAMPAIGN_KINDS:
+        raise ValueError(f"kind must be one of {', '.join(E.CAMPAIGN_KINDS)}")
     return jsonify(
-        {
-            "cells": matrix.to_rows(),
-            "criticality": {
-                code: str(matrix.criticality(code))
-                for code in (items or sorted(ground_truth.codes()))
-            },
-            "interception_rate": str(interception) if interception is not None else None,
-        }
+        {"campaigns": [_campaign_json(c, full=False) for c in container().evaluations.list(kind)]}
     )
 
 
@@ -1321,10 +1401,13 @@ def run_evaluation():
 def get_evaluation(evaluation_id: str):
     """GET /api/evaluations/{id} — FR-21, reading back a stored campaign.
 
-    *** YOUR EXERCISE ***: campaigns are computed but not persisted. Decide
-    whether they need to be. An argument for: week 7 results must be quotable
-    in the thesis months later. An argument against: the computation is
-    deterministic and takes two seconds, so storing its *input* is enough.
-    Both are defensible — write down which you chose and why.
+    Exercise 20, decided: campaigns ARE stored. The computation is
+    deterministic, but what it runs on is not frozen — the extractor, the
+    checks and the corpus all change over the internship. A figure quoted
+    in the thesis must be readable later exactly as it was measured, with
+    the fingerprints of the files that produced it.
     """
-    return jsonify({"error": "not_implemented", "detail": "see the docstring"}), 501
+    campaign = container().evaluations.get(evaluation_id)
+    if campaign is None:
+        return jsonify({"error": "not_found", "detail": "no evaluation campaign with this id"}), 404
+    return jsonify(_campaign_json(campaign))

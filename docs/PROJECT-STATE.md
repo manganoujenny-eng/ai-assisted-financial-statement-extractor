@@ -33,7 +33,7 @@ code before trusting it.
   financial indicators, and how does an extraction error propagate to those
   indicators?"*
 - **Repo:** `ai-assisted-financial-statement-extractor` on GitHub, branches
-  `main` (supervisor), `supervisor`, `test` (yours).
+  `main` (supervisor), `supervisor`, `test_corpus_campaign.py` (yours).
 - **Explicit exclusions (dossier):** cash flow statement, notes to accounts,
   statement of changes in equity, multi-year/sector benchmarking, financial
   scoring, free-form AI commentary, IFRS/non-OHADA frameworks, ERP
@@ -379,7 +379,7 @@ section 4 is the status source. Dates are as they appear in the transcripts.
   and fixed.
 - **Sep 29, 9:54 AM — the major pivot:** supervisor restructured the entire
   project into the hexagonal architecture described in §3, pushed to `main`,
-  created the `test` branch for your work, and reframed the remaining work as
+  created the `test_corpus_campaign.py` branch for your work, and reframed the remaining work as
   the 18-skipped-test exercise list.
 - **Sep 29 (afternoon) – Oct 2:** the bulk of the real implementation work —
   PostgreSQL setup (port turned out to be 5433, not 5432; fixed via

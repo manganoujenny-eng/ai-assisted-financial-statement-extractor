@@ -24,6 +24,7 @@ from .domain.ports import (
     CaseRepository,
     DatasetRepository,
     DocumentRepository,
+    EvaluationRepository,
     ExtractionRepository,
     Structurer,
 )
@@ -33,6 +34,7 @@ from .infra.db.memory import (
     InMemoryCaseRepository,
     InMemoryDatasetRepository,
     InMemoryDocumentRepository,
+    InMemoryEvaluationRepository,
     InMemoryExtractionRepository,
     InMemoryUserRepository,
 )
@@ -65,6 +67,8 @@ class Container:
     insight: InsightService
     users: UserRepository
     user_service: UserService
+    #: Week 7 campaigns (exercise 20).
+    evaluations: EvaluationRepository
 
 
 def build_container(config: Config | None = None) -> Container:
@@ -77,6 +81,7 @@ def build_container(config: Config | None = None) -> Container:
             SqlCaseRepository,
             SqlDatasetRepository,
             SqlDocumentRepository,
+            SqlEvaluationRepository,
             SqlExtractionRepository,
             SqlUserRepository,
         )
@@ -92,6 +97,7 @@ def build_container(config: Config | None = None) -> Container:
         audit = SqlAuditLog(session)
         ai_analyses = SqlAiAnalysisRepository(session)
         users = SqlUserRepository(session)
+        evaluations = SqlEvaluationRepository(session)
     else:
         cases = InMemoryCaseRepository()
         documents = InMemoryDocumentRepository()
@@ -100,6 +106,7 @@ def build_container(config: Config | None = None) -> Container:
         audit = InMemoryAuditLog()
         ai_analyses = InMemoryAiAnalysisRepository()
         users = InMemoryUserRepository()
+        evaluations = InMemoryEvaluationRepository()
 
     # Item 4 — rule-based for figures, checks and ratios (above and in the
     # services); the LLM only writes commentary on them, as a draft an
@@ -162,6 +169,7 @@ def build_container(config: Config | None = None) -> Container:
         insight=InsightService(analyst_writer, ai_analyses, audit, unavailable_reason),
         users=users,
         user_service=UserService(users, audit, cases),
+        evaluations=evaluations,
     )
 
 

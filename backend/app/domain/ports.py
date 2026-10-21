@@ -29,6 +29,7 @@ from .entities import (
     AiAnalysis,
     AnalysisCase,
     AuditEntry,
+    EvaluationCampaign,
     ExtractionRun,
     SourceDocument,
     User,
@@ -248,3 +249,13 @@ class UserRepository(Protocol):
     def list(self) -> list[User]: ...
     def save(self, user: User) -> None: ...
     def delete(self, user_id: str) -> None: ...
+
+
+class EvaluationRepository(Protocol):
+    """Week 7 campaigns (exercise 20). No save(), no delete: a measurement
+    is written once and kept, a new one is a new campaign."""
+
+    def add(self, campaign: EvaluationCampaign) -> None: ...
+    def get(self, campaign_id: str) -> EvaluationCampaign | None: ...
+    #: Newest first; ``kind`` filters on CORPUS or SENSITIVITY.
+    def list(self, kind: str | None = None) -> list[EvaluationCampaign]: ...

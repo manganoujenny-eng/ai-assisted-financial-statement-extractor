@@ -400,3 +400,46 @@ class User:
     @property
     def is_supervisor(self) -> bool:
         return self.role == ROLE_SUPERVISOR
+
+
+
+# ==========================================================================
+# Week 7 — a stored evaluation campaign (exercise 20)
+# ==========================================================================
+CAMPAIGN_CORPUS = "CORPUS"  # extraction measured against the hand readings
+CAMPAIGN_SENSITIVITY = "SENSITIVITY"  # errors injected into one statement
+CAMPAIGN_KINDS = (CAMPAIGN_CORPUS, CAMPAIGN_SENSITIVITY)
+
+
+@dataclass
+class EvaluationCampaign:
+    """One run of the week 7 measurements, kept as it was produced.
+
+    Exercise 20 — stored, because a figure quoted in the thesis must still
+    be readable, months later, exactly as it was measured: the extractor,
+    the checks or the corpus will have changed by then, and re-running the
+    campaign would give a different answer to a question asked about the
+    old one. ``inputs`` keeps the fingerprint (SHA-256) of every file the
+    campaign read, so it can also be proven which files produced it.
+
+    Written once, never edited — like ``proposed_amount`` (BR-10). A new
+    measurement is a new campaign, and the old one stays comparable to it.
+
+    ``summary``, ``inputs`` and ``packages`` are plain JSON (amounts and
+    rates as strings), exactly what the API returns.
+    """
+
+    kind: str
+    summary: dict
+    id: str = field(default_factory=_new_id)
+    run_at: datetime = field(default_factory=_now)
+    author: str | None = None
+    engine: str | None = None
+    corpus: str | None = None
+    note: str | None = None
+    inputs: dict = field(default_factory=dict)
+    packages: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.kind not in CAMPAIGN_KINDS:
+            raise DomainError(f"unknown campaign kind {self.kind!r} — expected one of {CAMPAIGN_KINDS}")

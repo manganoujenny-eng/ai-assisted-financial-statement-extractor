@@ -266,3 +266,67 @@ class UserRow(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+
+class EvaluationCampaignRow(Base):
+    """Week 7 — one stored campaign (exercise 20). New table: create_all()
+    creates it by itself on the next start, nothing to run by hand.
+
+    The headline figures have their own columns so that they can be read
+    and compared with plain SQL (pgAdmin), campaign after campaign. The
+    complete result stays in ``summary`` (JSON), as the API returns it.
+    """
+
+    __tablename__ = "evaluation_campaign"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    run_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    author: Mapped[str | None] = mapped_column(String(100))
+    engine: Mapped[str | None] = mapped_column(String(32))
+    corpus: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    packages_count: Mapped[int | None] = mapped_column(Integer)
+    evaluated_count: Mapped[int | None] = mapped_column(Integer)
+    field_accuracy: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    ratio_accuracy: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    amplification: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    silent_count: Mapped[int | None] = mapped_column(Integer)
+    interception_rate: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    inputs: Mapped[dict | None] = mapped_column(JSON)
+
+    packages: Mapped[list["EvaluationPackageRow"]] = relationship(
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        order_by="EvaluationPackageRow.id",
+    )
+
+
+class EvaluationPackageRow(Base):
+    """One package (RP001, RP002...) of a stored corpus campaign."""
+
+    __tablename__ = "evaluation_package"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaign.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    package: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    judged_fields: Mapped[int | None] = mapped_column(Integer)
+    wrong_fields: Mapped[int | None] = mapped_column(Integer)
+    field_accuracy: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    ratios: Mapped[int | None] = mapped_column(Integer)
+    wrong_ratios: Mapped[int | None] = mapped_column(Integer)
+    ratio_accuracy: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    amplification: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    silent_false_positives: Mapped[list | None] = mapped_column(JSON)
+    #: The complete package result, as the API returns it.
+    detail: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    campaign: Mapped[EvaluationCampaignRow] = relationship(back_populates="packages")
+
+

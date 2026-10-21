@@ -25,6 +25,8 @@ from .models import (
     AnalysisCaseRow,
     AuditLogRow,
     DocumentRow,
+    EvaluationCampaignRow,
+    EvaluationPackageRow,
     ExtractedFieldRow,
     ExtractionRunRow,
     UserRow,
@@ -593,4 +595,86 @@ def _user_to_entity(row: UserRow) -> E.User:
         password_hash=row.password_hash,
         active=row.active,
         created_at=row.created_at,
+    )
+
+
+
+# ==========================================================================
+# Week 7 — stored evaluation campaigns (exercise 20)
+# ==========================================================================
+def _as_decimal(value, places: str) -> Decimal | None:
+    """A rate from the JSON summary ("0.7857142857...") for its column."""
+    if value is None or value == "":
+        return None
+    return Decimal(str(value)).quantize(Decimal(places))
+
+
+class SqlEvaluationRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, campaign: E.EvaluationCampaign) -> None:
+        s = campaign.summary or {}
+        silent = s.get("silent_false_positives")
+        row = EvaluationCampaignRow(
+            id=campaign.id,
+            kind=campaign.kind,
+            run_at=campaign.run_at,
+            author=campaign.author,
+            engine=campaign.engine,
+            corpus=campaign.corpus,
+            note=campaign.note,
+            packages_count=s.get("packages"),
+            evaluated_count=s.get("evaluated"),
+            field_accuracy=_as_decimal(s.get("field_accuracy"), "0.000001"),
+            ratio_accuracy=_as_decimal(s.get("ratio_accuracy"), "0.000001"),
+            amplification=_as_decimal(s.get("amplification"), "0.01"),
+            silent_count=len(silent) if isinstance(silent, list) else None,
+            interception_rate=_as_decimal(s.get("interception_rate"), "0.000001"),
+            summary=campaign.summary,
+            inputs=campaign.inputs,
+        )
+        for p in campaign.packages:
+            row.packages.append(
+                EvaluationPackageRow(
+                    package=p.get("package") or "",
+                    status=p.get("status") or "",
+                    reason=p.get("reason"),
+                    judged_fields=p.get("judged_fields"),
+                    wrong_fields=len(p.get("wrong_fields") or []),
+                    field_accuracy=_as_decimal(p.get("field_accuracy"), "0.000001"),
+                    ratios=p.get("ratios"),
+                    wrong_ratios=len(p.get("wrong_ratios") or []),
+                    ratio_accuracy=_as_decimal(p.get("ratio_accuracy"), "0.000001"),
+                    amplification=_as_decimal(p.get("amplification"), "0.01"),
+                    silent_false_positives=p.get("silent_false_positives"),
+                    detail=p,
+                )
+            )
+        self.session.add(row)
+        self.session.commit()
+
+    def get(self, campaign_id: str) -> E.EvaluationCampaign | None:
+        row = self.session.get(EvaluationCampaignRow, campaign_id)
+        return _campaign_to_entity(row) if row else None
+
+    def list(self, kind: str | None = None) -> list[E.EvaluationCampaign]:
+        query = select(EvaluationCampaignRow).order_by(EvaluationCampaignRow.run_at.desc())
+        if kind:
+            query = query.where(EvaluationCampaignRow.kind == kind)
+        return [_campaign_to_entity(row) for row in self.session.scalars(query).all()]
+
+
+def _campaign_to_entity(row: EvaluationCampaignRow) -> E.EvaluationCampaign:
+    return E.EvaluationCampaign(
+        id=row.id,
+        kind=row.kind,
+        run_at=row.run_at,
+        author=row.author,
+        engine=row.engine,
+        corpus=row.corpus,
+        note=row.note,
+        summary=row.summary or {},
+        inputs=row.inputs or {},
+        packages=[p.detail for p in row.packages],
     )

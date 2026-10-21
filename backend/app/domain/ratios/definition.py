@@ -56,6 +56,17 @@ class RatioResult:
     reason: str | None = None
     items_used: tuple[str, ...] = ()
     inputs: dict[str, str] | None = None
+    #: The value BEFORE the one-decimal rounding of BR-15. ``value`` is what
+    #: people see; ``exact`` is what the evaluation measures (week 7). Rounded
+    #: to one decimal, R2 = 0.964 shows as 1.0 and a 10 % error on DD moves
+    #: it to 0.9 or not at all — the measurement would see the rounding, not
+    #: the error. Never displayed, never persisted.
+    exact: Decimal | None = None
+
+    @property
+    def measured(self) -> Decimal | None:
+        """The value to measure with: exact when known, else the shown one."""
+        return self.exact if self.exact is not None else self.value
 
     @property
     def is_computed(self) -> bool:

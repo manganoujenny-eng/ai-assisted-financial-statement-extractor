@@ -11,6 +11,7 @@ __pycache__/
 
 # Raw/private financial documents
 data/test_documents/
+data/corpus/
 
 # Environment variables
 .env

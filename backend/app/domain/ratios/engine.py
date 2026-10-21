@@ -116,6 +116,7 @@ def compute_one(definition: RatioDefinition, statement: FinancialStatement) -> R
         name=definition.name,
         status=COMPUTED,
         value=round_ratio(Decimal(raw)),
+        exact=Decimal(raw),
         unit=definition.unit,
         items_used=definition.required_items,
         inputs={code: str(statement[code].value) for code in definition.required_items},
