@@ -1,214 +1,245 @@
-# SYSCOHADA Financial Statement Extraction & Structuring Pipeline
+# SYSCOHADA Financial Statement Extraction and Analysis
 
-> **A full-chain scaffold has been added on top of this pipeline** (branch
-> `base/scaffold`). The extraction work described below is unchanged and still
-> lives in `backend/document_processing/`; everything around it — domain layer,
-> ratio engine, checks, Flask API, React interface, tests — is new.
->
-> **Start here: [`docs/LEARNING-PATH.md`](docs/LEARNING-PATH.md).** It lists
-> what is built, what is left to you, in which order, and with which test.
->
-> | Document | What it answers |
-> |---|---|
-> | [`docs/LEARNING-PATH.md`](docs/LEARNING-PATH.md) | What do I do next, week by week |
-> | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why is the code arranged this way |
-> | [`docs/DATA-MODEL-REVIEW.md`](docs/DATA-MODEL-REVIEW.md) | What changed in the database schema, and why |
->
-> Running it:
->
-> ```bash
-> python -m venv .venv && .venv\Scripts\activate
-> pip install -r requirements.txt
-> cd backend && python wsgi.py        # http://127.0.0.1:5000/api/health
-> ```
-> ```bash
-> cd frontend && npm install && npm run dev    # http://localhost:5173
-> ```
-> ```bash
-> pytest                               # 52 passed, 18 skipped — the 18 are the exercises
-> ```
+A prototype that reads SYSCOHADA financial statements (balance sheet and
+income statement, as PDF or Excel), extracts the line items, lets an analyst
+check and correct them beside the source document, has a supervisor validate
+them, and only then computes five financial ratios with a rule-based,
+auditable interpretation. A language model can add a written commentary,
+which an analyst must approve before it counts.
 
+Built for an internship and thesis project at **EB Partners / EB Audit &
+Advisory, Douala**, following the supervisor's *Scoping and Design Dossier
+v2.0* (cited in the code as "the dossier", with its section numbers).
 
-## What this is
+> **Research question (dossier):** to what extent can AI-assisted
+> extraction, deterministic ratio computation and human validation reliably
+> turn a SYSCOHADA reporting package into usable financial indicators, and
+> how does an extraction error propagate to those indicators?
 
-A prototype that ingests real SYSCOHADA financial statements (balance sheet and
-income statement) in either PDF or Excel format, and turns them into
-structured, code-indexed data suitable for downstream ratio analysis and
-consistency checking. Built as part of an internship/thesis project at EB
-Audit & Advisory, Douala.
+---
 
-**Scope:** PDF and Excel input only. Word/DOCX is explicitly out of scope and
-is rejected as an unsupported file type by design, not by omission.
+## What the system does, from document to result
 
-## Why this exists
+1. **Create a case**: a client and a fiscal year (analyst).
+2. **Upload** the statement(s): PDF (native or scanned) or Excel. Each file
+   is fingerprinted (SHA-256) so the same bytes are never processed twice.
+3. **Extract**: the rule-based structurer (default, free, deterministic)
+   reads the tables. Scanned pages go through OCR (Tesseract). A
+   language-model structurer (Claude) can be switched on instead.
+4. **Review and correct**: the source document on the left, the extracted
+   items on the right. Every correction keeps the original proposal. An item
+   the extractor missed can be keyed in by hand. The five consistency
+   checks re-run after each change.
+5. **Submit** the case to a chosen supervisor.
+6. **Validate or send back**: the supervisor validates (refused while a
+   blocking check fails, unless explicitly acknowledged) or sends the case
+   back with a correction request.
+7. **Analyse**: the five ratios are computed **from validated data only**,
+   each with a template interpretation and, when the document has the
+   column, a comparison with the previous year (N-1).
+8. **AI commentary** (optional): right after validation, a model writes a
+   commentary on the validated figures, in the screen's language. It stays
+   a draft until an analyst approves it.
+9. **Export** the analysis as an Excel workbook.
 
-SYSCOHADA financial statements follow a standard structural layout (fixed
-line-item codes like `BK`, `CP`, `XB`, a two-sided ACTIF/PASSIF layout for the
-balance sheet, a single-sided layout for the income statement) but arrive as
-unstructured documents — scanned or native PDFs, or Excel workbooks with no
-consistent column layout between documents. This pipeline extracts the
-underlying structured data regardless of which format or exact layout a given
-document uses, so it can be validated and fed into ratio formulas and
-consistency checks without manual re-keying.
+Every step is written to an append-only **audit log** (who, what, when, on
+what).
 
-## Pipeline stages
+---
 
-The pipeline is organized around seven stages, and both PDF and Excel input
-go through an equivalent version of all seven:
+## Who does what
 
-1. **Ingestion** — load the raw file (`document_loader.py` dispatches by file
-   extension to either `pdf_loader.load_pdf` or `excel_loader.load_excel`).
-2. **Document type detection** — for PDF, determine whether the file has a
-   real text layer (`NATIVE_PDF`) or is image-only (`POSSIBLY_SCANNED`), which
-   decides whether OCR is needed. Excel files don't need this step; they're
-   always machine-readable.
-3. **Text extraction** — pull raw text from every page (PDF) or every cell
-   (Excel).
-4. **Table extraction** — for PDF, `pdfplumber` extracts structured tables
-   from pages with a real text layer. For Excel, each sheet's rows are
-   already cell-separated, so this step is a straightforward conversion
-   rather than a detection problem.
-5. **OCR fallback** — for scanned PDFs with no text layer, Tesseract OCR runs
-   page-by-page instead of native text extraction. This is a real, accepted
-   limitation for scanned documents: OCR recovers readable text, but
-   `pdfplumber` cannot recover table *structure* from a scanned page (no
-   vector/text layer to read positions from), so scanned PDFs currently
-   produce 0 structured tables. Excel never needs this step.
-6. **Normalization** — convert SYSCOHADA-formatted numbers (space-separated
-   thousands, `"-"` as a nil placeholder) into real integers, and classify
-   which columns are monetary versus which are metadata (Note references,
-   operator symbols).
-7. **Structured output** — split each row into its ACTIF/PASSIF (or single)
-   side, build a line item per SYSCOHADA code with `current_year` and
-   `prior_year` values, and combine everything into one code-indexed
-   dictionary per document, written out as JSON.
+| Role | What they do | Where |
+|---|---|---|
+| **Analyst** | Creates their cases, uploads, extracts, corrects, keys missing items, submits to a supervisor, approves the AI commentary, exports | Cases, My cases, Review, Dashboard |
+| **Supervisor** | Validates the cases submitted to them, or sends them back; sees every analyst's work and statistics; manages analyst accounts; deletes finished (analysed) cases | Supervisor dashboard, My cases, Users |
+| **Administrator** | Runs the system without preparing or validating any case: manages supervisor and analyst accounts, reads the audit log (filters, CSV), browses the database read-only, manages the evaluation corpus, runs and deletes evaluation campaigns | Administration: Overview, Users, Audit log, Campaigns, Data |
 
-## Project structure
+Administrator accounts are managed only with `backend/create_admin.py`,
+never from the screens. Every user changes their own name and password on
+**My account**.
+
+The interface is in **English and French** (switch in the header). The
+choice is remembered in the browser and also sets the language of the AI
+commentary.
+
+---
+
+## Quick start (Windows, PowerShell)
+
+**Requirements:** Python 3.11+, Node.js 18+. Optional: PostgreSQL (SQLite
+is used otherwise), and Tesseract OCR for scanned PDFs.
+
+```powershell
+# 1. Python environment, from the project folder
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2. Settings: copy the example, then edit .env
+copy .env.example .env
+#    For accounts to persist, set STORAGE=sql. Without DATABASE_URL the
+#    data goes to data/prototype.db (SQLite); with it, to PostgreSQL.
+
+# 3. The first administrator (one time)
+cd backend
+python create_admin.py          # prints a temporary password if you press Enter
+
+# 4. The backend
+python wsgi.py                  # http://127.0.0.1:5000/api/health
+```
+
+```powershell
+# 5. The interface, in a second terminal
+cd frontend
+npm install
+npm run dev                     # http://localhost:5173
+```
+
+Sign in as the administrator, change the temporary password on **My
+account**, then create the supervisors and analysts on **Users**.
+
+```powershell
+# 6. The tests, from the project folder
+pytest                          # 237 passed
+```
+
+> Start the backend from inside `backend/`: the `document_processing`
+> package is imported from there.
+
+---
+
+## Configuration (`.env`)
+
+`.env` is git-ignored and must never be committed (NFR-04). `.env.example`
+lists every variable.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STORAGE` | `memory` | `memory` (nothing kept after a restart) or `sql` |
+| `DATABASE_URL` | SQLite in `<project>/data/prototype.db` | e.g. `postgresql+psycopg://USER:PASSWORD@localhost:5433/DBNAME` |
+| `AUTH_REQUIRED` | `true` | Sign-in and roles. `false` only for tests or a quick local demo |
+| `SECRET_KEY` | random at each start | Signs the session cookie. Set it, or everyone is signed out on every restart |
+| `STRUCTURER` | `rule_based` | `rule_based` or `llm` (Claude reads the figures) |
+| `AI_ANALYSIS` | `llm` | `llm` (AI commentary) or `off` |
+| `ANTHROPIC_API_KEY` | none | Needed for `STRUCTURER=llm` and the AI commentary |
+| `MODEL` / `ANALYSIS_MODEL` | `claude-opus-5-5` | Model of the structurer / of the commentary |
+| `INPUT_USD_PER_MTOK`, `OUTPUT_USD_PER_MTOK` | `4.00`, `20.00` | Prices used for the cost cap (and `ANALYSIS_…` variants) |
+| `LLM_EFFORT` | `medium` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `MAX_COST_USD` | `5.00` | Hard cap on model spending since the backend started (NFR-08); restart to reset |
+| `UPLOAD_DIR` | `<project>/data/uploads` | Where uploaded files are stored |
+| `MAX_UPLOAD_MB` | `300` | Largest accepted upload |
+| `CORPUS_DIR` | `<project>/data/corpus` | The evaluation corpus |
+| `LLM_CACHE_DIR` | `<project>/data/llm_cache` | Cached model answers (never pay twice) |
+| `OCR_WORKERS` | CPU count − 1, max 4 | Pages OCR'd in parallel |
+| `CORS_ORIGIN` | `http://localhost:5173` | The development frontend |
+
+---
+
+## The accounting core
+
+**Ratios** (`backend/app/domain/ratios/`):
+
+| Code | Ratio | Formula | Reference threshold |
+|---|---|---|---|
+| R1 | Current ratio | (BK + BT) / (DP + DT) | 1.0 (documented) |
+| R2 | Equity ratio | CP / (CP + DD) | none, deliberately (BR-14) |
+| R3 | Stable funding coverage | (CP + DD) / AZ, AZ net | 1.0 (documented) |
+| R4 | Net margin | XI / XB × 100 | none, deliberately |
+| R5 | Return on equity | XI / CP × 100; not computable when equity is negative | none, deliberately |
+
+**Consistency checks** (`backend/app/domain/checks.py`):
+
+| Code | Check | Severity |
+|---|---|---|
+| CHK001 | Balance sheet equilibrium: BZ = DZ | blocking |
+| CHK002 | Subtotals: AZ + BK + BT (+ BU) = BZ and CP + DD + DP + DT (+ DV) = DZ | blocking |
+| CHK003 | Net income: XI = CJ | blocking |
+| CHK004 | Completeness: the 11 required items are present | blocking |
+| CHK005 | Plausible signs | warning |
+
+The 11 required items: AZ, BK, BT, BZ, CP, DD, DP, DT, DZ, XB, XI.
+
+Ratios are never computed from unvalidated data (BR-01). A missing item or a
+zero denominator gives *not computable*, with its reason (BR-02, BR-03). No
+ratio is called good or bad without a documented reference (BR-14).
+
+---
+
+## Evaluation (week 7)
+
+The measurements of dossier §18–19, run over a corpus of hand-read packages:
+
+```
+data/corpus/
+  RP001/
+    ETAT_FINANCIER_TEST1.pdf      the statement(s)
+    annotation_RP001.xlsx         your hand reading (sheet "Annotation",
+                                  columns "code" and "Value")
+  RP002/ ...
+```
+
+- **Corpus campaign**: the system extracts each package and is compared
+  item by item with the hand reading. It reports field accuracy, ratio
+  accuracy (within 1 %), the amplification coefficient, **silent false
+  positives** (wrong values that pass every check) and the item criticality.
+- **Sensitivity test**: a correct hand reading is damaged on purpose (+1 %,
+  +5 %, +10 % on each item) to see which ratios move and whether the checks
+  notice.
+
+Run them from **Administration → Campaigns**, or from the command line:
+`cd backend` then `python evaluate_corpus.py`. Every campaign is stored in
+the database (`evaluation_campaign`, `evaluation_package`), with the
+fingerprint of every file it read.
+
+---
+
+## Project layout
 
 ```
 backend/
-├── test_loader.py                 # test harness — runs the full pipeline
-│                                   # against real documents and reports output
-│
-└── document_processing/
-    ├── document_loader.py         # entry point: detects file type, dispatches
-    │                               # to the right loader
-    ├── pdf_loader.py               # PDF ingestion, native/scanned detection,
-    │                               # text extraction, OCR fallback, table
-    │                               # extraction
-    ├── excel_loader.py             # Excel ingestion and cell-to-text
-    │                               # conversion
-    ├── normarlize.py               # number normalization and monetary-column
-    │                               # classification (filename intentionally
-    │                               # spelled this way on disk)
-    ├── structure.py                # side-splitting, line-item building,
-    │                               # year-value extraction, code indexing
-    └── output_writer.py            # writes the final structured result to
-                                    # data/extracted/ as JSON
-
-data/
-├── test_documents/
-│   └── PKG_001/                   # real test documents: native PDF, scanned
-│                                   # PDF, Excel version of the same
-│                                   # statement, ground-truth annotation file
-└── extracted/                     # JSON output, one file per processed
-                                    # document
+  app/                      the application (api, services, domain, infra)
+  document_processing/      the original extractor (PDF, OCR, Excel, tables)
+  wsgi.py                   starts the backend
+  create_admin.py           manages administrator accounts
+  evaluate_corpus.py        runs a corpus campaign from the command line
+  add_users_schema.py       one-time migration (users table), already run
+  reset_stranded_cases.py   one-time repair script
+  test_loader.py            the original pipeline harness
+frontend/                   React + Vite interface
+tests/                      unit and integration tests (pytest)
+data/                       uploads, corpus, model cache, test documents
+docs/                       the documentation below
 ```
 
-## Key design decisions
+What **every file** does: [`docs/FILE-GUIDE.md`](docs/FILE-GUIDE.md).
 
-**Header-driven monetary column classification, not hardcoded positions.**
-Which columns hold monetary values is decided by matching merged header text
-against a keyword list (`EXERCICE`, `NET`, `BRUT`, `AMORT`), not by assuming a
-fixed column index — different documents lay out columns differently. A
-content-based cross-check (what fraction of a column's actual values look
-numeric) runs alongside the header-based classification and prints a warning
-on disagreement, so a document with unfamiliar header wording fails loudly
-with a specific warning rather than silently normalizing the wrong columns.
+---
 
-**Side-splitting by locating `REF` columns generically.** A SYSCOHADA balance
-sheet row has two sides (ACTIF and PASSIF); an income statement row has one.
-Rather than hardcoding which column index starts each side, the code scans
-the header row for every column literally labeled `REF` and splits on those
-positions — this works for both statement shapes without special-casing
-either one.
+## Documentation
 
-**Current/prior year extracted by position, not by header text.** PDF header
-text for the current-year vs. prior-year columns can be textually
-inconsistent (a bare `NET` vs. a fully year-qualified `EXERCICE AU
-31/12/N-1 NET` for what's structurally the same kind of column), but the
-column order is structurally consistent: the last monetary column in a side
-is always the prior year, the one before it is always the current year. Year
-values are extracted by that position, independent of exactly how the header
-text merged.
+| Document | What it answers |
+|---|---|
+| [`docs/PROJECT-STATE.md`](docs/PROJECT-STATE.md) | What is done, what is open, the history: **read it first** |
+| [`docs/FILE-GUIDE.md`](docs/FILE-GUIDE.md) | What each file of the project does |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why the code is arranged this way; where each rule lives |
+| [`docs/EXTRACTION-PIPELINE.md`](docs/EXTRACTION-PIPELINE.md) | How `document_processing` reads a PDF or Excel statement |
+| [`docs/DATA-MODEL-REVIEW.md`](docs/DATA-MODEL-REVIEW.md) | The database schema: the review of the original, and the tables added since |
+| [`docs/LEARNING-PATH.md`](docs/LEARNING-PATH.md) | The supervisor's original week-by-week plan and exercises |
 
-**Header row count detected dynamically, not assumed.** The number of header
-rows before real data starts differs between statement types and even
-between the PDF and Excel versions of the same document (the PDF's income
-statement table has 2 header rows due to how the layout splits across lines;
-the Excel version of the same statement has only 1). The pipeline detects
-where real data starts by scanning for the first row where a `REF` column
-holds a value matching the two-uppercase-letter pattern every real SYSCOHADA
-code follows, rather than assuming a fixed count.
+---
 
-**Excel formula cells resolved via `data_only=True`.** Real Excel financial
-statements can contain formulas (e.g., `=SUM(K15:K16)`) instead of literal
-values. The workbook is loaded with `data_only=True` so openpyxl returns
-Excel's last-calculated cached value instead of the formula text.
+## Scope and known limitations
 
-## Known limitations (found and documented, not fixed, because they aren't
-## extraction bugs)
-
-- **`AZ` (Fixed Assets) ground-truth value matches the BRUT (gross,
-  pre-depreciation) column, not either NET column** — inconsistent with how
-  `BZ`/`DZ` (Total Assets) were annotated using NET. Extraction is internally
-  consistent (always reports NET); this looks like a data-entry
-  inconsistency in the reference annotation dataset itself.
-- **`XI`/`XG` (Net Income / Operating Income) sign ambiguity** — the income
-  statement's own `+`/`-` operator column isn't yet interpreted, and the
-  reference annotation dataset itself already flags this row as
-  "Ambiguous"/"DISCREPANCY". Needs resolution before ratio formulas use these
-  values.
-- **`CA`/`CF` prior-year values in the Excel test file are off by a small,
-  specific amount (13 and 14) from ground truth**, despite resolving to real
-  numbers via `data_only=True`. This traces to the source workbook's own
-  cached formula results, not to anything the pipeline does — likely a stale
-  calculation cache or a data-entry issue in the underlying summed cells.
-  Neither code is used by any of the five ratio formulas, so this doesn't
-  block downstream work.
-
-## Running it
-
-From `backend/`, run `test_loader.py`. It processes every file listed in its
-`test_paths`, printing detailed output at each stage, and writes one JSON
-file per processed document to `data/extracted/`.
-
-## Output format
-
-Each JSON file in `data/extracted/` looks like:
-
-```json
-{
-  "source_file": "ETAT FINANCIER TEST1.pdf",
-  "file_type": "PDF",
-  "line_items": {
-    "BK": {
-      "code": "BK",
-      "label": "TOTAL ACTIF CIRCULANT",
-      "current_year": 6746235223,
-      "prior_year": 4855220024,
-      "fields": { "...": "..." }
-    }
-  }
-}
-```
-
-## Status
-
-All seven pipeline stages are built and validated against real documents for
-both PDF and Excel input, cross-checked against an independent ground-truth
-annotation dataset and, for the test document that exists in both formats,
-against each other.
-
-Not yet built: the ratio formula engine (`R001`–`R005`) and consistency
-checks (`CHK001`–`CHK005`) that will consume this structured output.
+- **In scope:** balance sheet and income statement, PDF and Excel. Word
+  files are refused by design.
+- **Out of scope (dossier):** cash flow statement, notes, statement of
+  changes in equity, sector benchmarking, scoring, IFRS, ERP integration,
+  production deployment, real non-anonymised client data.
+- **Scanned PDFs:** OCR recovers text, and a table is rebuilt from word
+  positions, but a skewed or low-resolution scan can still yield nothing
+  usable. The item can then be keyed in by hand.
+- **No database migrations:** `create_all` creates missing tables but never
+  alters an existing one (see `DATA-MODEL-REVIEW.md`).
+- **Confidentiality (NFR-04):** public or anonymised documents only. A real
+  client statement is never sent to a model API without written approval.

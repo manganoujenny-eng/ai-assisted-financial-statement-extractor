@@ -177,3 +177,38 @@ One thing worth knowing now even though you do not need it this week:
 `create_all` only ever *creates* tables. It never alters an existing one. The
 day you add a column to `models.py` and wonder why it is not in your database,
 that is why — and the answer is a migration tool (Alembic). Not this week.
+
+
+---
+
+## Since this review (updated 22 October 2026)
+
+The review above is kept as written: it is the record of how the schema got
+its shape. The schema has grown since, with the features of October. All
+tables live in `backend/app/infra/db/models.py`; there are now **13**.
+
+| Table or column | Added for | What it holds |
+|---|---|---|
+| `analysis_case.analyst` | My cases (item 4) | The full name of the analyst who owns the case. Added to the existing table once by a one-time script, because `create_all` never alters a table. |
+| `ai_analysis` | AI commentary (item 4) | One commentary per validated dataset: status (DRAFT, APPROVED, FAILED), the model's original sections and the approved ones, model, prompt version and language, cost, failure reason, who approved it and when. |
+| `app_user` | Sign-in and roles (item 5) | Username and full name (both unique), role (ANALYST, SUPERVISOR, ADMIN), password **hash** (never the password), active flag. Created by `add_users_schema.py`. |
+| `evaluation_campaign` | Week 7, exercise 20 | One row per campaign: kind (CORPUS or SENSITIVITY), when, who, engine, corpus folder, note, the headline figures in their own columns, the full summary and the input fingerprints as JSON. |
+| `evaluation_package` | Week 7, exercise 20 | One row per package of a corpus campaign, with its figures and full detail; deleted with its campaign (`ON DELETE CASCADE`). |
+
+Two points of the review have moved on:
+
+- **`audit_log.author`** is still a plain name, on purpose, even though a
+  user table now exists. The name comes from the signed-in session, never
+  from the request; it also records authors that are not accounts (a script
+  such as `create_admin.py`, the application itself, a username typed at a
+  refused sign-in), which a foreign key to `app_user` could not hold.
+- **Default storage.** With no settings at all, the prototype keeps
+  everything in memory (`STORAGE=memory`); with `STORAGE=sql` and no
+  `DATABASE_URL` it uses SQLite (`data/prototype.db`); your `.env` points it
+  at PostgreSQL.
+
+Still true: no native ENUM types; `ratio_result`, `interpretation` and
+`check_result` exist but are not written (results are recomputed from
+`validated_dataset`); no migration tool. Each new column so far was added
+with a one-time script; if columns keep being added, that is the moment for
+Alembic.

@@ -1,5 +1,13 @@
 # Learning path
 
+> **Status on 22 October 2026: every exercise below is done.** Weeks 3 to 7
+> are implemented and tested (237 tests pass, none skipped, against the
+> "52 passed, 18 skipped" this plan starts from). What remains is the corpus
+> of week 2 (one package of the planned 20–30), the non-code exercises at the
+> end of this page, and week 8, the writing. The current state is in
+> `PROJECT-STATE.md`; this page is kept as the supervisor wrote it, as the
+> plan the work followed.
+
 **Read this first. It is the only document you need open to know what to do
 next.**
 

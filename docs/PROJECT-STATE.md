@@ -1,21 +1,22 @@
-# SYSCOHADA Extractor — Project State & Continuity Log
+# SYSCOHADA Extractor: Project State and Continuity Log
 
-**Generated:** 12 October 2026, by direct inspection of the live codebase at
-`C:\Users\HP\PycharmProjects\Financial Project` (this session is linked to that
-machine). Everything in sections 3–7 below was read from the actual current
-files on disk today, not reconstructed from chat history. Section 8 condenses
-the five ChatGPT transcripts you had exported (Aug 6 – Oct 2); it is historical
-record, kept for the thesis, and is **not** used as the source of truth for
-"what's done" — the live code is.
+**First generated:** 12 October 2026. **Updated:** 22 October 2026, again by
+reading every file of the live codebase at
+`C:\Users\HP\PycharmProjects\Financial Project`, not by remembering a
+conversation. Sections 3–7 and 10 state what the code does today. Section 8
+is the history, section 9 the working agreement, sections 11–12 the fixes
+and the work done since the first version of this file.
 
 **Why this file exists:** you asked that nothing be lost again, and that
 nothing be invented. The safest way to guarantee both is a single file, in
 your own repo, that states exactly what the code currently does, updated by
-reading the code — not by remembering a conversation. Keep this file in
-`docs/` alongside `ARCHITECTURE.md`, `LEARNING-PATH.md` and
-`DATA-MODEL-REVIEW.md`, and ask whoever picks this project up next (me,
-ChatGPT, or your supervisor) to read it first and re-verify it against the
+reading the code. Ask whoever picks this project up next (me, another
+assistant, or your supervisor) to read it first and re-verify it against the
 code before trusting it.
+
+Companion documents: `FILE-GUIDE.md` (what every file does),
+`ARCHITECTURE.md` (why it is arranged this way), `EXTRACTION-PIPELINE.md`,
+`DATA-MODEL-REVIEW.md`, `LEARNING-PATH.md`.
 
 ---
 
@@ -23,324 +24,238 @@ code before trusting it.
 
 - **Working title:** AI-Assisted Extraction and Deterministic Financial
   Analysis of SYSCOHADA Financial Statements.
+- **Project Title:** AI-Assisted Financial Statement Extractor
 - **Organisation:** EB Partners / EB Audit & Advisory, Douala, Cameroon.
 - **Governed by:** the supervisor's "Scoping and Design Dossier v2.0" (cited
-  throughout the code as "the dossier", with section numbers — §3.2, §11.1,
-  §18.1, etc. — that correspond to real sections of that document).
+  throughout the code as "the dossier", with section numbers such as §3.2,
+  §11.1, §18.1 that correspond to real sections of that document).
 - **Research question (verbatim, from the dossier):** *"To what extent can
   AI-assisted extraction, deterministic ratio computation and human
   validation reliably transform a SYSCOHADA reporting package into usable
   financial indicators, and how does an extraction error propagate to those
   indicators?"*
 - **Repo:** `ai-assisted-financial-statement-extractor` on GitHub, branches
-  `main` (supervisor), `supervisor`, `test_corpus_campaign.py` (yours).
+  `main` (supervisor), `supervisor`, `test` (yours).
 - **Explicit exclusions (dossier):** cash flow statement, notes to accounts,
   statement of changes in equity, multi-year/sector benchmarking, financial
-  scoring, free-form AI commentary, IFRS/non-OHADA frameworks, ERP
-  integration, production deployment, real non-anonymised client data.
+  scoring, free-form AI commentary *as a conclusion* (the commentary that
+  exists is a draft an analyst must approve, see §5), IFRS/non-OHADA
+  frameworks, ERP integration, production deployment, real non-anonymised
+  client data.
 
 ---
 
-## 2. How the project actually unfolded (one paragraph, so the rest makes sense)
+## 2. How the project actually unfolded
 
-You built a first version yourself in Weeks 1–3 (scoping, corpus planning,
-a from-scratch `pdf_loader.py`/`document_processing` package). Around
-**29 Sep 2026**, your supervisor restructured the whole backend into a
-hexagonal/layered architecture and pushed it to `main`, wrapping your
-existing `document_processing` code as an adapter rather than replacing it.
-From that point on, the work became "exercises": `pytest -rs` originally
-reported **52 passed, 18 skipped**, and the 18 skips were a self-documenting
-to-do list, each marked `*** YOUR EXERCISE ***` in the code with a docstring
-explaining the rule it must satisfy. Everything below is organised around
-that exercise list, because that is how the actual repository is organised.
+I built a first version myself in weeks 1–3 (scoping, corpus planning,
+a from-scratch `document_processing` package). Around **29 Sep 2026** your
+supervisor restructured the backend into a hexagonal/layered architecture
+and pushed it to `main`, wrapping your `document_processing` code as an
+adapter rather than replacing it. From then on the work became "exercises":
+`pytest -rs` reported **52 passed, 18 skipped**, the 18 skips being a
+self-documenting to-do list, each marked `*** YOUR EXERCISE ***`.
+
+All of those exercises are now done (weeks 3–7). Beyond them, the
+prototype grew the features a real firm needs to use it: sign-in and three
+roles, supervisor assignment and notifications, an AI commentary that an
+analyst approves, French and English screens, and an administration area
+that replaces pgAdmin and the command line. **Today: 237 tests, all
+passing, none skipped.**
 
 ---
 
-## 3. Architecture (verified against the live code today)
+## 3. Architecture (verified 22 Oct 2026)
 
 ```
-FRONTEND (React + Vite)
+FRONTEND (React + Vite)       pages by role, api/client.js, i18n (en/fr)
      |
-API (Flask controllers — backend/app/api/)
+API (Flask, backend/app/api/) routes.py · auth.py (sign-in, roles) · admin.py
      |
-SERVICES (orchestration — backend/app/services/)
-     |
-DOMAIN (accounting rules — backend/app/domain/) — depends on nothing external
-     |
-  +--------+--------+---------------+
-  v        v        v               v
-checks.py ratios/  interpretation/  statement.py / syscohada.py / value_objects.py
+SERVICES (orchestration)      extraction · validation · analysis · insight (AI)
+     |                        case · user · overview · evaluation · corpus_campaign
+DOMAIN (accounting rules)     entities + lifecycle · checks · ratios ·
+     |                        interpretation · statement · syscohada · ports
+INFRA                         pdf readers · rule-based / Claude structurer ·
+                              Claude analyst · cache · SQL + in-memory repos · export
 ```
 
-Dependency rule (enforced by a real test, not just a convention):
+The dependency rule is enforced by a real test:
 `tests/unit/domain/test_entities_and_purity.py::test_the_domain_layer_depends_on_nothing_external`
-walks every module under `app/domain` via `ast` and fails if any of
-`flask, sqlalchemy, pdfplumber, fitz, pymupdf, openpyxl, pytesseract, PIL,
-requests, anthropic, document_processing` is imported there. If you ever
-need to touch this test to make it pass, the fix is to move the offending
-code to `infra/`, not to widen the allow-list.
+walks every module under `app/domain` and fails if `flask`, `sqlalchemy`,
+`pdfplumber`, `fitz`, `pymupdf`, `openpyxl`, `pytesseract`, `PIL`,
+`requests`, `anthropic` or `document_processing` is imported there. If you
+ever need to touch this test to make it pass, the fix is to move the
+offending code to `infra/`, not to widen the allow-list.
 
-**Backend layout (as it exists today):**
-
-```
-backend/
-  document_processing/        <- your original extractor, untouched
-    pdf_loader.py, excel_loader.py, structure.py, normarlize.py,
-    document_loader.py, output_writer.py
-  app/
-    __init__.py                <- composition root: build_container(), create_app()
-    config.py                  <- Config dataclass, reads env vars
-    api/
-      routes.py                <- Flask blueprint, all HTTP endpoints
-      serialisation.py         <- entity -> JSON, the frontend contract
-      errors.py
-    domain/
-      entities.py              <- AnalysisCase, SourceDocument, ExtractionRun,
-                                   ExtractedField, ExtractionRejection,
-                                   ValidatedDataset, AuditEntry, DomainError
-      value_objects.py         <- Amount, ItemCode
-      statement.py             <- FinancialStatement
-      syscohada.py             <- SYSCOHADA code catalogue, REQUIRED_CODES
-      checks.py                <- CHK001-CHK005
-      ratios/
-        definition.py, engine.py,
-        r01_current_ratio.py ... r05_return_on_equity.py
-      interpretation/
-        templates.py           <- Threshold, Interpretation, interpret()
-    infra/
-      pdf/readers.py           <- PdfReader, ExcelReader (DocumentReader port)
-      llm/
-        claude_structurer.py, rule_based.py, cache.py, prompts/v1.md
-      db/
-        models.py, repositories.py, memory.py, session.py
-      export/
-        spreadsheet.py          <- FR-19, openpyxl
-    services/
-      extraction_service.py, validation_service.py,
-      analysis_service.py, evaluation_service.py
-frontend/src/
-  pages/        CasesPage.jsx, ReviewPage.jsx, DashboardPage.jsx
-  components/   ChecksPanel.jsx, StatusPill.jsx, ExcelSourceViewer.jsx
-  api/client.js
-  styles/app.css
-tests/
-  unit/domain/   test_checks.py, test_ratios.py, test_value_objects.py,
-                 test_entities_and_purity.py
-  unit/services/ test_validation_service.py
-  unit/          test_claude_structurer.py, test_extraction_service.py,
-                 test_evaluation.py
-  integration/   test_api_end_to_end.py
-docs/            ARCHITECTURE.md, DATA-MODEL-REVIEW.md, LEARNING-PATH.md
-```
+Full layout, file by file: `FILE-GUIDE.md`. Reasons and rule locations:
+`ARCHITECTURE.md`.
 
 ---
 
-## 4. Status, verified against the live code today
+## 4. Status, verified against the live code (22 Oct 2026)
 
 | Week / area | Deliverable | Status | Evidence |
 |---|---|---|---|
 | Week 1 | Scoping note | ✅ Done | Project definition, 5-ratio reduction, pipeline agreed (dossier v2.0) |
-| Week 2 | Test corpus (20–30 packages) + annotations + ground truth | ⚠️ **Not actually built** | `data/test_documents/` contains only **one** package (`PKG001`: 2 PDFs + 1 xlsx). No `annotations/` or `ground_truth/` folders exist anywhere in the repo. The 20–30-package corpus, the annotation spreadsheets, and the manually-calculated reference ratios described at length in your planning conversations were **planned but never created on disk.** |
-| Week 3 | PDF ingestion / document processing | ✅ Done (superseded) | `document_processing/` exists and is wrapped by `infra/pdf/readers.py` (`PdfReader`, `ExcelReader`) |
-| Week 3 (post-restructure) | R2, R3, R4, R5 ratio calculators | ✅ Done | `domain/ratios/r02..r05_*.py` all implemented, no `NotImplementedError` |
-| Week 3 (post-restructure) | CHK002, CHK003, CHK004 | ✅ Done | `domain/checks.py` — all 5 checks (CHK001–CHK005) implemented |
-| Week 4 | Prompt `v1.md` | ✅ Done | `infra/llm/prompts/v1.md`, versioned, rules documented |
-| Week 4 | `ClaudeStructurer._call_model` | ✅ Done (code complete) | `infra/llm/claude_structurer.py` — real Anthropic call wired, cost accounting, one retry with validation-error feedback. **Never actually invoked against the real API** — no `ANTHROPIC_API_KEY` was available during development; all tests mock `anthropic.Anthropic`. |
-| Week 4 (Exercise #10) | Record what the schema rejected | ✅ Done | `ExtractionRejection` entity exists; `extraction_service.py::_to_fields` returns `(fields, rejections)` |
-| Week 5, Ex. 11 | Thresholds or documented absence | ✅ Done | `templates.py`: R1 = 1.0, R3 = 1.0 (both sourced), R2/R4/R5 deliberately `None` after multi-source research — see §5 below |
-| Week 5, Ex. 12 | Serve the source document | ✅ Done | `GET /api/documents/<id>/file` (PDF/XLSX/XLS, correct mimetypes) |
-| Week 5, Ex. 13 | What "reopen" invalidates | ✅ Done | `ValidationService.reopen()`; `AnalysisService` (see below) refuses analysis while `UNDER_REVIEW` |
-| Week 6, Ex. 14 | Side-by-side source document (FR-10) | ✅ Done, and extended | `ReviewPage.jsx` embeds the PDF via `<iframe src={getDocumentFileUrl(...)}>`; **Excel documents get a dedicated `ExcelSourceViewer.jsx`** (sheet tabs, row/column table) backed by a new `GET /api/documents/<id>/preview` route — this is beyond what any of the five chat transcripts describe having been finished |
-| Week 6, Ex. 15 | Export (FR-19) | ✅ Done | `GET /api/cases/<id>/export` returns a real `.xlsx` via `infra/export/spreadsheet.py`; `DashboardPage.jsx` has a working "Export analysis as spreadsheet" button |
-| FR-15–18 | Ratio dashboard, interpretation drill-down | ✅ Done | `DashboardPage.jsx`: ratio cards (COMPUTED/NOT_COMPUTABLE), "View details"/"View reason", interpretation text + cited reference, calculation inputs table |
-| FR-20 | Year-over-year (N vs N-1) comparison | ✅ Done | `ValidatedDataset` now carries `prior_year_amounts` (this is new relative to every transcript — see §7); `GET /api/cases/<id>/analysis` computes a real N-1 comparison, preferring N-1 from the same validated package and falling back to a separately-validated prior-year case for the same client; `DashboardPage.jsx`'s `YearComparison` renders it, or "Prior-year data not available" when there is none |
-| FR-21 | Sensitivity / error-injection campaign (§19.2) | ✅ Done (pre-built by supervisor) | `EvaluationService.sensitivity_matrix()` — perturb an item by 1/5/10%, recompute every ratio, flag whether checks would have caught it. `POST /api/evaluations` exposes it; `client.js` has `runSensitivity()`. **No frontend page renders it yet** — there's no "Evaluation" tab in the React app. |
-| FR-21 (persistence) | `GET /api/evaluations/<id>` | ❌ Stub | Returns `501 not_implemented`; explicit open exercise: "campaigns are computed but not persisted — decide whether they need to be, and document the choice" |
-| §18.1 (Part D) | `field_accuracy()` | ❌ Not implemented | `evaluation_service.py` — `raise NotImplementedError`, **zero tests exist** |
-| §18.1 (Part D) | `ratio_accuracy()` | ❌ Not implemented | same file, same status |
-| §18.1 (Part D) | `amplification_coefficient()` | ❌ Not implemented | same file, same status |
-| §18.1 (Part D) | `silent_false_positives()` | ❌ Not implemented, **flagged "implement this one first — the most important indicator"** | same file, same status |
-| Week 7–8 | Replay corpus, inject errors, write thesis results | ❌ Cannot start yet | Blocked on both the missing corpus/ground truth (Week 2) and the four Part D methods above |
-
-**Bottom line:** the interface (Weeks 1–6) is further along than any single
-chat transcript shows — DashboardPage, the Excel side-by-side viewer, export,
-and year-over-year comparison are all finished and working in the code on
-your machine right now. The part that is genuinely not started is **Part D**:
-the four evaluation metrics, and — more fundamentally — the **test corpus and
-ground truth that Part D needs to run against, which was planned in detail
-but never actually built.**
+| Week 2 | Test corpus (20–30 packages) + ground truth | ⚠️ **1 package** | `data/corpus/RP001/` holds one statement and its hand reading (`annotation_RP001_1.xlsx`). The 20–30 packages are still to be built; the whole evaluation chain is ready for them. |
+| Week 3 | Document processing | ✅ Done | `document_processing/`, wrapped by `infra/pdf/readers.py` |
+| Week 3 | R2–R5 | ✅ Done | `domain/ratios/r02..r05_*.py`; R5 refuses negative equity (your decision) |
+| Week 3 | CHK002, CHK003, CHK004 | ✅ Done | `domain/checks.py`, all five checks |
+| Week 4 | Prompt `v1.md`, `_call_model`, rejections | ✅ Done | `infra/llm/claude_structurer.py`, `prompts/v1.md`, `ExtractionRejection` |
+| Week 5 | Ex. 11 thresholds | ✅ Done | R1 = 1.0, R3 = 1.0 (sourced); R2, R4, R5 deliberately none |
+| Week 5 | Ex. 12 serve the document, Ex. 13 reopen | ✅ Done | `GET /api/documents/<id>/file`; `ValidationService.reopen()` |
+| Week 6 | Ex. 14 side-by-side review | ✅ Done | `ReviewPage.jsx`: PDF in an iframe, Excel in `ExcelSourceViewer.jsx` |
+| Week 6 | Ex. 15 export | ✅ Done | `GET /api/cases/<id>/export`, `infra/export/spreadsheet.py` |
+| FR-15–20 | Dashboard, interpretation, N vs N-1 | ✅ Done | `DashboardPage.jsx`, `YearComparisonChart.jsx` |
+| Week 7 | Ex. 16 silent false positives | ✅ Done | `EvaluationService.silent_false_positives` + tests |
+| Week 7 | Ex. 17 field accuracy | ✅ Done | exact to the franc; a missing field counts as wrong |
+| Week 7 | Ex. 18 ratio accuracy | ✅ Done | within 1 % of the ground-truth ratio, on the **unrounded** value |
+| Week 7 | Ex. 19 amplification coefficient | ✅ Done | ratio error rate ÷ field error rate; none when no field is wrong |
+| Week 7 | Ex. 20 persist campaigns | ✅ Done | tables `evaluation_campaign`, `evaluation_package`; `GET /api/evaluations/<id>`; deletable by the administrator, traced in the audit |
+| Week 7 | Corpus campaign | ✅ Done | `services/corpus_campaign.py`, `evaluate_corpus.py`, Administration → Campaigns. One CLI run is on disk: `data/corpus/_results/campaign_20261020_160543.json` |
+| FR-21 | Sensitivity test | ✅ Done | `EvaluationService.sensitivity_matrix()`, run per package from Campaigns, item × ratio matrix shown |
+| Week 8 | Writing | ⏳ Open | No new feature planned; see §7 |
 
 ---
 
 ## 5. Domain rules of record (exact, current)
 
-**Case lifecycle** (`domain/entities.py`):
-`CREATED → EXTRACTING → {EXTRACTED | EXTRACTION_FAILED}`;
-`EXTRACTION_FAILED → EXTRACTING`; `EXTRACTED → {UNDER_REVIEW, VALIDATED,
-EXTRACTING}`; `UNDER_REVIEW → {VALIDATED, EXTRACTING}`;
-`VALIDATED → {ANALYSED, UNDER_REVIEW}`; `ANALYSED → {UNDER_REVIEW}` (reopening
-invalidates the computed results — enforced by `AnalysisService`, not by
-deleting anything).
+**Case lifecycle** (`domain/entities.py`, `ALLOWED_TRANSITIONS`):
 
-**Field status:** `PROPOSED → CORRECTED` (via `ExtractedField.correct()`,
-refuses once `VALIDATED`) `→ VALIDATED_FIELD`; `KEYED` for hand-entered
-fields.
+```
+CREATED → EXTRACTING → EXTRACTED | EXTRACTION_FAILED
+EXTRACTION_FAILED → EXTRACTING                    (retry; the failed run is kept)
+EXTRACTED    → UNDER_REVIEW | SUBMITTED | EXTRACTING
+UNDER_REVIEW → SUBMITTED | EXTRACTING
+SUBMITTED    → VALIDATED | UNDER_REVIEW           (validate, or send back)
+VALIDATED    → ANALYSED | UNDER_REVIEW            (reopening is traced)
+ANALYSED     → UNDER_REVIEW                       (reopening invalidates the results)
+```
 
-**The five ratios (final formulas, as implemented):**
+Nothing is validated that the analyst has not first submitted (§6.2). The
+analyst chooses the supervisor at submission; only that supervisor is
+notified and may validate or send back. A supervisor who is no longer active
+releases their cases to every supervisor.
+
+**Field status:** `PROPOSED → CORRECTED → VALIDATED`; `KEYED` for an item
+entered by hand (never proposed, so it does not distort the accuracy
+figures). The proposed amount is never overwritten (BR-10).
+
+**Roles:** ANALYST (prepares their own cases), SUPERVISOR (validates the
+cases submitted to them, manages analysts, sees everyone's work, deletes
+analysed cases they validated), ADMIN (runs the system: accounts, audit,
+data, corpus and campaigns; never prepares nor validates). Administrators
+exist only through `create_admin.py`.
+
+**The five ratios:**
 
 | Code | Name | Formula | Threshold |
 |---|---|---|---|
-| R1 | Current ratio | (BK + BT) / (DP + DT) | **1.0**, documented (methodological note) |
-| R2 | Equity ratio | CP / (CP + DD) | None — insufficient trustworthy evidence for this exact formula |
-| R3 | Stable funding coverage | (CP + DD) / AZ (net fixed assets) | **1.0**, documented (converging prudential/regional sources) |
-| R4 | Net margin | XI / XB × 100 | None — sources found were sector/listing-specific, not general |
-| R5 | Return on equity | XI / CP × 100, raises on negative equity → NOT_COMPUTABLE | None — no sufficiently universal benchmark found |
+| R1 | Current ratio | (BK + BT) / (DP + DT) | **1.0**, documented |
+| R2 | Equity ratio | CP / (CP + DD) | None, deliberately |
+| R3 | Stable funding coverage | (CP + DD) / AZ (net) | **1.0**, documented |
+| R4 | Net margin | XI / XB × 100 | None, deliberately |
+| R5 | Return on equity | XI / CP × 100; negative equity → NOT_COMPUTABLE | None, deliberately |
 
-R2/R4/R5 were deliberately left without a threshold after you corrected an
-earlier draft that had assigned numbers from weakly-matching sources — see
-your own quote in §9. This is a defensible, intentional methodological
-choice, not an unfinished task.
+R2/R4/R5 were deliberately left without a threshold after you rejected an
+earlier draft that had assigned numbers from weakly matching sources (your
+own words in §9). A methodological choice, not an unfinished task.
 
-**SYSCOHADA code catalogue** (`domain/syscohada.py`) — the 11 required codes:
-`AZ` (fixed assets/net), `BK` (current assets), `BT` (cash, asset side), `BZ`
-(total assets), `CP` (equity), `DD` (financial debt), `DP` (current
-liabilities), `DT` (cash, liability side), `DZ` (total liabilities+equity),
-`XB` (revenue), `XI` (net income). `BU`, `DV` (currency translation
-differences) and `CJ`/`XG` exist in the catalogue but are optional / not
-required.
+**Required items (11):** AZ, BK, BT, BZ, CP, DD, DP, DT, DZ, XB, XI. The
+campaign also judges CJ, BU and DV when the hand reading has them.
 
-**Consistency checks** (`domain/checks.py`), all implemented:
-- CHK001 — balance-sheet equilibrium, `AZ+BK+BT(+BU) = BZ` and
-  `CP+DD+DP+DT(+DV) = DZ`.
-- CHK002 — subtotal consistency (same equation, re-expressed per the
-  dossier's definition).
-- CHK003 — net income consistency, `XI == CJ`.
-- CHK004 — completeness (all `REQUIRED_CODES` present).
-- CHK005 — plausible signs (negative `AZ/BK/BT/BZ/XB` → WARNING, not
-  blocking).
+**Consistency checks** (`domain/checks.py`):
 
-**Interpretation** — exactly three templates, enforced by
-`test_nothing_is_ever_generated_freely`: `T_NOT_COMPUTABLE`,
-`T_FACTUAL_NO_REFERENCE`, `T_COMPARED_TO_THRESHOLD`. No other sentence shape
-can ever reach the dashboard.
+- CHK001, blocking: balance sheet equilibrium, BZ = DZ, to the franc.
+- CHK002, blocking: subtotals, AZ + BK + BT (+ BU) = BZ and
+  CP + DD + DP + DT (+ DV) = DZ (BU, DV counted only when present).
+- CHK003, blocking: net income consistency, XI = CJ.
+- CHK004, blocking: completeness, every required item present.
+- CHK005, warning: plausible signs.
+
+A check whose items are missing is reported as passed with an explicit
+message: the absence is CHK004's business, and failing twice would make one
+problem look like two.
+
+**Interpretation:** exactly three templates (`T_NOT_COMPUTABLE`,
+`T_FACTUAL_NO_REFERENCE`, `T_COMPARED_TO_THRESHOLD`), enforced by a test.
+The frontend rebuilds the same sentence in French or English from the
+template and threshold the backend sends.
+
+**AI commentary** (`services/insight_service.py`, prompt `analysis_v3.md`):
+written *about* validated figures, never proposing one; receives no client
+name, year or document (NFR-04); written in the screen's language; stored as
+a DRAFT and shown as part of the analysis only once an analyst approves it,
+the original text being kept beside any edit (BR-13).
 
 ---
 
 ## 6. Database (verified)
 
-Storage is switched by `STORAGE=memory|sql` + `DATABASE_URL`
-(`backend/app/config.py`, loaded via `load_dotenv()`). No migrations tool
-(Alembic) — `Base.metadata.create_all()` only, by design, "not this week."
+Storage: `STORAGE=memory|sql` + `DATABASE_URL` (PostgreSQL in your `.env`;
+SQLite `data/prototype.db` when empty). No migration tool (Alembic):
+`create_all()` creates missing tables and never alters an existing one;
+column additions were done once with `add_users_schema.py`.
 
-**Tables (`infra/db/models.py`):** `analysis_case`, `document`,
+**Tables (13, `infra/db/models.py`):** `analysis_case`, `document`,
 `extraction_run`, `extracted_field`, `check_result`, `validated_dataset`,
-`ratio_result`, `interpretation`, `audit_log`.
+`ratio_result`, `interpretation`, `audit_log`, `ai_analysis`, `app_user`,
+`evaluation_campaign`, `evaluation_package`.
 
-**Resolving the open "Postgres enum" question from earlier in this project:**
-there are **no native Postgres ENUM types anywhere in this schema.** Every
-status/category column (`status`, `engine`, `doc_type`, `severity`,
-`ratio_code`, etc.) is a plain `String`, constrained only by Python-level
-string constants in `domain/entities.py`. This is confirmed directly from
-today's `models.py` — there's nothing to "fix" or reconcile with an old
-`analysis_status` enum; the current schema never adopted DB-level enums at
-all. Worth a one-line mention in the thesis as a known limitation if you
-want to be thorough, but it is not blocking anything.
-
-**Confirmed but worth knowing:** `ratio_result`, `interpretation` and
-`check_result` tables exist in the schema but **nothing writes to them** —
-`repositories.py` has no `SqlRatioResultRepository`/`SqlCheckResultRepository`.
-Ratios, checks and interpretations are recomputed on every request from the
-`ValidatedDataset` (which *is* persisted) rather than stored. This is
-consistent with the architecture ("pure computation, no repository needed")
-but means there is currently no historical record of what a dashboard showed
-on a given date if the underlying ratio formulas later change — a thesis-worthy
-observation if you discuss traceability over time.
-
-**`ValidatedDataset` now carries two fiscal years** (this is new relative to
-everything in the chat transcripts): `amounts` (year N) and
-`prior_year_amounts` (year N-1), stored together in the existing
-`validated_dataset.amounts` JSON column as `{"N": {...}, "N-1": {...}}`, with
-a backward-compatibility read path in `repositories.py` for any older row
-that still holds year-N amounts directly. This is what makes the FR-20
-year-comparison feature work from a single upload when the source document
-includes both years' columns.
+- No native PostgreSQL ENUM anywhere: status and role columns are plain
+  strings, constrained by the constants and the state machine in
+  `domain/entities.py`.
+- `ratio_result`, `interpretation` and `check_result` exist but nothing
+  writes to them: ratios, checks and interpretations are recomputed from the
+  stored `validated_dataset` at each request. Exact and cheap, but a
+  dashboard from a past date is not frozen if a formula changes later (a
+  traceability point worth one sentence in the thesis).
+- `validated_dataset.amounts` holds both years: `{"N": {...}, "N-1": {...}}`.
+- `app_user` stores password **hashes** only (Werkzeug); the data browser
+  never shows them.
+- `evaluation_campaign` has the headline figures in their own columns (so
+  they can be queried in SQL) and the full summary as JSON;
+  `evaluation_package` has one row per package. Deleting a campaign deletes
+  its packages (cascade) and leaves an audit entry.
 
 ---
 
-## 7. What's genuinely open right now
+## 7. What is genuinely open now
 
-In order of what blocks what:
+In order of importance for the thesis:
 
-1. **The test corpus and ground truth (Week 2 deliverable) do not exist.**
-   Only one real package (`PKG001`) is on disk. Part D (§18.1) cannot be
-   meaningfully evaluated without a corpus with known-correct values to
-   compare against. This is the single biggest gap between the dossier's
-   plan and the current repository, and it's worth raising with your
-   supervisor explicitly rather than assuming a smaller corpus is fine.
-2. **Four evaluation methods are unimplemented** in `evaluation_service.py`:
-   `field_accuracy`, `ratio_accuracy`, `amplification_coefficient`,
-   `silent_false_positives` (in that dependency order — amplification needs
-   the first two; the dossier itself flags `silent_false_positives` as the
-   one to implement first because it's the project's headline risk
-   indicator). Each has a precise docstring spec already written for you
-   (quoted in full in the file) and zero tests.
-3. **`GET /api/evaluations/<id>` is a 501 stub** — a real design decision
-   (persist campaign results, or just the inputs, since the computation is
-   deterministic and cheap) is still open and explicitly deferred to you.
-4. **No frontend page renders the sensitivity campaign** (FR-21) — the
-   backend endpoint and the `client.js` call exist, but there's no
-   "Evaluation" tab/page in `frontend/src/pages/`.
-5. Two smaller, non-blocking items: the rule-based-structurer-vs-corpus
-   baseline comparison that Week 4 asked for ("before spending money on
-   Claude, measure what the rule-based structurer already gets right") was
-   never formally run — **except for one real, measured data point now on
-   record** (below); and the real Anthropic API has never actually been
-   called (previously blocked on your supervisor obtaining a key — worth
-   confirming that's no longer the case before Week 7 corpus replay, since
-   that's real cost).
-
-   **One measured rule-based failure, with cause (13 Oct 2026).** `client4`'s
-   document (`ETAT_FINANCIER_TEST2.pdf`, a genuinely scanned 2-page PDF —
-   confirmed directly via pdfplumber: 0 native text characters, 0 detected
-   tables, 1 embedded image, on both pages) fails `RuleBasedStructurer` with
-   `"no usable item found in the document"`, even after two real fixes:
-   - `document_processing/pdf_loader.py` gained `ocr_page_table()` /
-     `words_to_table()`: Tesseract's word-level `image_to_data` output is
-     reconstructed into the same row/column grid shape
-     `pdfplumber.extract_tables()` returns, so a scanned page can reach
-     `find_side_start_columns()`/`extract_line_items()` at all. Previously
-     OCR only ever fed `pages_text` — never `document.tables` — which is
-     the literal reason every scanned document failed outright, independent
-     of OCR quality.
-   - `document_processing/structure.py`'s `find_side_start_columns()` gained
-     a fallback: when the literal word `"REF"` doesn't survive OCR, it looks
-     for a column where the two-letter SYSCOHADA codes themselves (AA, AB,
-     AC…) recur instead.
-
-   Both are real and tested (10 new unit tests:
-   `tests/unit/test_pdf_ocr_table.py`, plus additions to
-   `tests/unit/test_document_structure.py`), and neither touches the
-   native-PDF path — confirmed client1/client2/client3/SOCATRANS still
-   extract exactly as before (198/198/188/198 fields respectively,
-   unchanged). Neither rescues this specific file: on
-   `ETAT_FINANCIER_TEST2.pdf`, the word positions recovered from OCR are
-   scrambled badly enough (page skew/resolution — not a code defect) that
-   no column, REF or otherwise, survives as a clean, recurring structure.
-   Example — the actual reconstructed row for what should be one
-   balance-sheet line item:
-   `['559', '819911', '169 382 179', None, '437 732 419', None, '+ -}',
-   '452948 553', '119', None, None]`
-
-   Kept as a documented limitation rather than chased further with more
-   rule-based engineering, per `infra/llm/rule_based.py`'s own docstring:
-   *"The language model earns its place on the documents this class fails
-   on: unusual layouts, scans, non-standard labels."* This is exactly that
-   case, now with a real measurement behind it rather than an assumption —
-   a legitimate §11.1 data point, not a bug to keep fixing.
+1. **The corpus.** One package (RP001) out of the 20–30 the dossier plans.
+   Everything else is ready: add a folder per package with its statement and
+   one annotation workbook (Administration → Campaigns, or directly in
+   `data/corpus/`), then run a campaign. Worth confirming with your
+   supervisor what size is acceptable.
+2. **The baseline comparison (§11.1).** Run the corpus campaign with
+   `STRUCTURER=rule_based` and again with `STRUCTURER=llm`, and compare
+   field accuracy, ratio accuracy and silent false positives. This needs an
+   API key and costs money (the cache prevents paying twice).
+3. **The non-code exercises** (`LEARNING-PATH.md`): the failure typology
+   (§19.3), whether the model's stated confidence predicts its errors, the
+   R5 and AZ paragraphs, and the four limitations stated at the defence.
+4. **The XI/XG sign** of the income statement operator column (see
+   `EXTRACTION-PIPELINE.md`). CHK003 catches a mismatch with CJ when CJ is
+   present.
+5. **One missing guard.** `POST /api/ai-analyses/<id>/approval` and
+   `POST /api/cases/<id>/ai-analysis` check that someone is signed in, but
+   not their role: a supervisor or the administrator could approve or
+   regenerate a commentary through the API, although the screens only offer
+   it to the analyst. The approver's name is still recorded from the
+   session, so it is visible in the audit; the fix is a
+   `require_analyst` + `require_case_owner` on both routes, with a test.
+6. **Small clean-up:** a few comments describe an earlier state; listed in
+   `FILE-GUIDE.md` §9. In `checks.py`, CHK002 reports severity WARNING when
+   it passes and BLOCKING when it fails (harmless, since a passed check
+   blocks nothing, but inconsistent with the other checks).
+7. **Week 8: writing.** No new feature. Anything unfinished becomes a stated
+   limitation (§20).
 
 ---
 
-## 8. Condensed chronological history (from your 5 ChatGPT exports)
+## 8. Condensed chronological history
 
 This is historical context for the thesis narrative, not a status source —
 section 4 is the status source. Dates are as they appear in the transcripts.
@@ -379,7 +294,7 @@ section 4 is the status source. Dates are as they appear in the transcripts.
   and fixed.
 - **Sep 29, 9:54 AM — the major pivot:** supervisor restructured the entire
   project into the hexagonal architecture described in §3, pushed to `main`,
-  created the `test_corpus_campaign.py` branch for your work, and reframed the remaining work as
+  created the `test` branch for your work, and reframed the remaining work as
   the 18-skipped-test exercise list.
 - **Sep 29 (afternoon) – Oct 2:** the bulk of the real implementation work —
   PostgreSQL setup (port turned out to be 5433, not 5432; fixed via
@@ -409,72 +324,32 @@ section 4 is the status source. Dates are as they appear in the transcripts.
   exported, or directly. Worth knowing for your own records, not something
   to redo.
 
----
-
-## 9. Verbatim lessons — how you've asked this project to be run
-
-These are your own words from the transcripts, correcting an earlier
-assistant. They are the actual working agreement for this project and apply
-here too:
-
-> "all your response more reference the discussion on the referenced chat no
-> assumption" — ground every claim in the actual code or actual prior output,
-> never invent.
-
-> "i have already send that output so refers yourself and let continue" /
-> "i have already send you all this information what is inside all this
-> folder. why are you turning around asking the same thing" — don't re-ask
-> for information already given; look it up.
-
-> "you are not given exact source i dont want you to force a threshold ... if
-> you cannot trust enough the different sources to assign a threshold let us
-> just not put it" — when evidence is weak, say so and leave the gap
-> documented, rather than filling it to look complete.
-
-> "remember inside the LEARNING-PATH.md after the week3 ... we were expected
-> we had the week4" — follow the supervisor's declared sequencing; don't
-> opportunistically fix unrelated TODOs out of order.
-
-> "nooh your are not still in page this is not the status of all the ratio
-> there are some with threshold and some without" — get partial-status claims
-> exactly right (some ratios have thresholds, some don't — say which).
-
-> "week 14 was already completed how can we start week 15 without completing
-> week 14" — don't let exercise/week numbering drift from the supervisor's
-> actual list.
-
-This document (§4 especially) was built by re-reading the actual files for
-exactly this reason — every status claim above is traceable to a specific
-file and, where relevant, a specific line.
+- **13 – 22 Oct (this repository, dates from the files):** see §12 for
+  the detail. In short: OCR tables for scanned PDFs (13–14 Oct); the AI
+  commentary and "My cases" (item 4, 14–15 Oct); keyed items; French and
+  English screens and the EB-Partners Audit look (15 Oct); sign-in, roles
+  and notifications (item 5, 14–19 Oct); supervisor assignment, the
+  supervisor dashboard charts and prompt `analysis-v3` on Claude Opus 5.5
+  (19 Oct); week 7 indicators and the corpus campaign (20–21 Oct); the
+  administrator role and the administration area (21–22 Oct).
 
 ---
 
-## 10. Open decisions for you (and, where noted, your supervisor)
 
-1. **Corpus gap.** Is a 1-package corpus acceptable for the evaluation
-   chapter, or does the 20–30-package corpus need to be built before Part D
-   can proceed? This changes the critical path significantly and is worth
-   raising with your supervisor directly rather than deciding alone.
-2. **Evaluation campaign persistence** (`GET /api/evaluations/<id>`) — store
-   full results, or just the inputs (since recomputation is cheap and
-   deterministic)? Either is defensible; the exercise asks you to choose and
-   write down why.
-3. **Evaluation UI** — does FR-21 need its own page in the React app for the
-   live demo, or is the API response (already working) sufficient for the
-   defense?
-4. **Anthropic API key** — confirm whether your supervisor has now obtained
-   one, since Week 7's corpus replay is the first point real API cost
-   appears.
+## 09. Open decisions for you (and, where noted, your supervisor)
 
-I'm ready to start on whichever of these you want — most naturally
-`silent_false_positives()` first (per the dossier's own instruction and
-because it needs no corpus beyond `PKG001` plus a couple of hand-crafted test
-statements to prove it works), with the corpus-size conversation with your
-supervisor happening in parallel.
+1. **Corpus size.** How many packages are enough for the evaluation chapter?
+   Raise it with your supervisor (§7.1).
+2. **Rule-based vs language model.** Whether to run the paid comparison of
+   §7.2, on how many packages, within which budget (`MAX_COST_USD`).
+3. **Which campaigns go in the thesis.** Campaigns can now be deleted; keep
+   the ones you quote, and note the fingerprints of the files they read.
+4. **Stored vs recomputed ratios** (§6): keep recomputation (and say so), or
+   start writing `ratio_result` for a frozen history.
 
 ---
 
-## 11. Fixes applied since 12 Oct 2026 (verified against live code)
+## 10. Fixes applied between 12 and 13 Oct 2026 (verified against live code)
 
 Five real bugs, found and fixed since this file was last generated, each
 with its own test proving the bug was real (reverted and confirmed failing
@@ -501,7 +376,7 @@ before being fixed) rather than assumed:
    with a title line, an entity/ID block and a disclaimer sentence first.
    Fixed to scan forward for the first row that actually contains `"REF"`.
    Confirmed directly: 0 extracted items → 198, all consistency checks
-   passing. Evidence: `tests/unit/test_document_structure.py`.
+   passing. Evidence: `tests/unit/test_document_structurer.py`.
 
 3. **CHK002's gap reported as `0` instead of `0.00`.** The passing branch
    of `check_subtotal_consistency` in `domain/checks.py` returned a plain
@@ -541,6 +416,83 @@ before being fixed) rather than assumed:
    because the in-memory test couldn't have caught this bug at all, for the
    reference-semantics reason above.
 
-See §7 item 5 for the related, still-open finding on client4's actual scan
-(the OCR-to-table reconstruction and REF-tolerance fallback, and why
-neither rescues that specific file).
+The related finding on client4's scanned file (`ETAT_FINANCIER_TEST2.pdf`):
+the OCR-to-table reconstruction and the REF fallback were added (§12), and
+neither rescues that specific file, whose OCR word positions are too
+scrambled (skew, resolution) for any column to survive. Kept as a documented
+limitation (`EXTRACTION-PIPELINE.md`): exactly the kind of document the
+language-model structurer is meant to handle, and where the analyst can key
+the items in by hand.
+
+---
+
+## 11. Work done since 13 Oct 2026 (verified against the live code)
+
+Grouped by subject; dates are the files' modification dates. Each item came
+with its tests, written first.
+
+**Scanned PDFs (13–14 Oct).** OCR word positions rebuilt into tables
+(`pdf_loader.ocr_page_table`, `words_to_table`), the REF-column fallback in
+`structure.py`, OCR in parallel (`OCR_WORKERS`). Tests:
+`test_pdf_ocr_table.py`, `test_document_structurer.py`.
+
+**Keyed items (14–15 Oct).** An analyst can enter an item the extractor
+missed (`ValidationService.add_field`, `AddItemForm.jsx`); it is stored as
+KEYED, audited, and every check reruns.
+
+**AI commentary, item 4 (14–19 Oct).** `InsightService` +
+`infra/llm/claude_analyst.py`: after an analysis, a model writes a
+commentary on the validated figures, ratios, checks and N vs N-1, stored as
+a DRAFT (`ai_analysis` table), edited and approved by the analyst, original
+kept. Prompts `analysis_v1` → `v2` → `v3` (v3, 19 Oct: an advisor's
+reading with a diagnosis and recommendations; the model is not given the
+code's thresholds). On Claude Opus 5.5 with an effort setting
+(`LLM_EFFORT`) and a cost cap. Tests: `test_add_field_and_insight.py`,
+`test_intergration_api.py`, `test_opus_and_language.py`.
+
+**My cases (item 4).** `GET /api/my-cases`, `MyCasesPage.jsx`: an analyst's
+own cases; a supervisor's validation work.
+
+**Languages and look (15 Oct).** Every screen in English and French
+(`i18n/`), the AI commentary in the screen's language, the EB-Partners
+Audit brand (`BrandMark.jsx`, `public/brand/`), shared status pills and
+danger dialogs.
+
+**Sign-in and roles, item 5 (14–19 Oct).** `app_user` table, hashed
+passwords, signed session cookie, `api/auth.py` guards; every recorded name
+comes from the session. Analysts prepare only their own cases; supervisors
+validate and manage analysts. Submission (`SUBMITTED` state) before
+validation, correction requests, the notification bell, the supervisor
+dashboard (`SupervisorPage.jsx`, `RatioSpread.jsx`), account page. One-time
+migration `add_users_schema.py`. Tests: `test_users_and_roles.py`,
+`test_user_admin_rules.py`.
+
+**Supervisor assignment (19 Oct).** The analyst picks the supervisor at
+submission; only that supervisor is notified and may decide; only the
+validator may send back or delete afterwards. Test:
+`test_supervisor_my_cases.py`.
+
+**Case management (15 Oct).** Edit and delete cases and documents
+(`CaseService`) with the rules on validated results; a blocking overlay
+during long operations with a time limit (`BusyOverlay.jsx`, 21 Oct).
+
+**Week 7 (20–21 Oct).** Exercises 16–19 in `EvaluationService`; ratios
+measured on their unrounded value (`RatioResult.exact` / `measured`) so that
+rounding to one decimal does not distort the 1 % tolerance; the corpus
+campaign (`services/corpus_campaign.py`) reading the annotation workbook
+format of RP001; `evaluate_corpus.py`; exercise 20, campaigns stored in
+`evaluation_campaign` / `evaluation_package` and read back through
+`/api/evaluations`. Tests: `test_evaluation_metrics.py`,
+`test_corpus_campaign.py`, `test_evaluation_api.py`,
+`test_sql_evaluation_repository.py`.
+
+**Administrator and administration area (21–22 Oct).** Third role, ADMIN,
+created only with `create_admin.py`. Pages: Overview (the whole system),
+Users (supervisors and analysts), Audit log (filters by who, action, kind of
+element, dates, text; detail; CSV), Campaigns (corpus packages and files,
+run a campaign, sensitivity test per package, trend charts, every package
+item by item and ratio by ratio with the cause of each wrong ratio,
+deleting a campaign), Data (read-only browser of every table, grouped and
+explained). The audit now also records case creation, sign-out, the author
+of an upload and every corpus and campaign action. Test:
+`test_admin_area.py`.
