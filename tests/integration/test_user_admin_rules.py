@@ -51,7 +51,7 @@ def test_a_supervisor_adds_analysts_but_not_supervisors(app):
         "username": "boss", "full_name": "Big Boss", "role": "SUPERVISOR", "password": "12345678",
     })
     assert refused.status_code == 409
-    assert "database" in refused.get_json()["detail"]
+    assert "administrator" in refused.get_json()["detail"]
 
     added = paul.post("/api/users", json={
         "username": "eric", "full_name": "Eric Fotso", "password": "12345678",

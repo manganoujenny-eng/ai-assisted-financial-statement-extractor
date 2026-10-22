@@ -10,12 +10,16 @@ How identity works once this is on (``AUTH_REQUIRED``, default on):
   user (``actor()``), never from what the browser sends. A request cannot
   claim to be someone else.
 * Only a SUPERVISOR may validate a submitted case, send a case back with a
-  correction request, manage users and open the cross-analyst dashboard
+  correction request, manage analysts and open the cross-analyst dashboard
   (``require_supervisor()``). A supervisor deletes ANALYSED cases only
   (enforced in CaseService).
 * Only an ANALYST prepares a case — create, edit, upload and delete
   documents, extract, correct, key items, submit (``require_analyst()``) —
   and only on their own cases (``require_case_owner()``).
+* The ADMINISTRATOR runs the system (``require_admin()``): every account
+  except other administrators, the audit log, the database (read-only),
+  the evaluation corpus and campaigns. An administrator neither prepares
+  nor validates a case.
 
 With ``AUTH_REQUIRED=false`` (the test suite, a quick local demo) the old
 behaviour stays: names come from the request body and nothing is enforced.
@@ -83,14 +87,38 @@ def require_supervisor() -> None:
 def require_analyst(action: str = "do this") -> None:
     """Preparing a case is the analyst's work: creating it, uploading and
     deleting documents, extracting, correcting, keying items, submitting.
-    A supervisor reviews, validates or sends back — never prepares."""
+    A supervisor reviews, validates or sends back — never prepares; the
+    administrator does neither."""
     if not auth_required():
         return
     user = current_user()
     if user is None:
         raise Unauthorized("sign in first")
-    if user.is_supervisor:
+    if not user.is_analyst:
         raise Forbidden(f"only an analyst can {action}")
+
+
+def require_admin() -> None:
+    """The administration area: accounts, audit log, database, campaigns."""
+    if not auth_required():
+        return
+    user = current_user()
+    if user is None:
+        raise Unauthorized("sign in first")
+    if not user.is_admin:
+        raise Forbidden("only the administrator can do this")
+
+
+def require_user_manager() -> None:
+    """The Users page: a supervisor (analysts) or the administrator
+    (supervisors and analysts). UserService decides who may touch whom."""
+    if not auth_required():
+        return
+    user = current_user()
+    if user is None:
+        raise Unauthorized("sign in first")
+    if not (user.is_supervisor or user.is_admin):
+        raise Forbidden("only a supervisor or the administrator can manage users")
 
 
 def require_case_owner(case: E.AnalysisCase) -> None:
@@ -125,12 +153,15 @@ def actor(claimed: str | None = None, default: str = "analyst") -> str:
 
 
 def actor_role(claimed: str | None = None) -> str:
-    """'supervisor' or 'analyst' — the role string CaseService's delete
-    guard expects. Signed in: the user's real role. Auth off: as claimed."""
+    """'supervisor', 'analyst' or 'admin' — the role string CaseService's
+    delete guard expects. Signed in: the user's real role. Auth off: as
+    claimed."""
     if auth_required():
         user = current_user()
         if user is None:
             raise Unauthorized("sign in first")
+        if user.is_admin:
+            return "admin"
         return "supervisor" if user.is_supervisor else "analyst"
     return (str(claimed).strip().lower() if claimed else "") or "analyst"
 
@@ -162,6 +193,11 @@ def login():
 
 @auth_bp.post("/logout")
 def logout():
+    user = current_user() if auth_required() else None
+    if user is not None:
+        _container().audit.record(
+            E.AuditEntry(entity="User", entity_id=user.id, action="LOGOUT", author=user.full_name)
+        )
     session.clear()
     return "", 204
 
@@ -189,6 +225,7 @@ def me():
         raise Unauthorized("sign in first")
     return jsonify({**user_json(user), "auth_required": True})
 
+
 @auth_bp.patch("/me")
 def update_me():
     """My account: change my own full name (any signed-in user)."""
@@ -198,6 +235,7 @@ def update_me():
     payload = request.get_json(silent=True) or {}
     _container().user_service.update_own_profile(user, str(payload.get("full_name") or ""))
     return jsonify({**user_json(user), "auth_required": True})
+
 
 @auth_bp.post("/password")
 def change_password():
@@ -211,39 +249,48 @@ def change_password():
     return "", 204
 
 
-# --- user administration (supervisor only) --------------------------------
+# --- user administration (supervisor or administrator) --------------------
+def _manager() -> E.User:
+    """The signed-in manager, or a stand-in administrator with sign-in off."""
+    return current_user() or E.User(
+        username="local", full_name="Local user", role=E.ROLE_ADMIN, password_hash="-", id="local"
+    )
+
+
 @users_bp.get("")
 def list_users():
     """Every user, for the Users page. Analysts get the list too, but only
-    names and roles (to show who is who); the page itself is supervisor-only."""
+    names and roles (to show who is who); the page itself is for
+    supervisors and the administrator."""
     return jsonify([user_json(u) for u in _container().users.list()])
 
 
 @users_bp.post("")
 def create_user():
-    require_supervisor()
+    """A supervisor adds an analyst; the administrator adds an analyst or a
+    supervisor. Nobody adds an administrator here (create_admin.py)."""
+    require_user_manager()
     payload = request.get_json(silent=True) or {}
     user = _container().user_service.create(
         username=str(payload.get("username") or ""),
         full_name=str(payload.get("full_name") or ""),
         role=str(payload.get("role") or E.ROLE_ANALYST),
         password=str(payload.get("password") or ""),
-        author=actor(default="supervisor"),
+        author=actor(default="administrator"),
+        allow_supervisor=_manager().is_admin,
     )
     return jsonify(user_json(user)), 201
 
 
 @users_bp.patch("/<user_id>")
 def update_user(user_id: str):
-    require_supervisor()
+    require_user_manager()
     c = _container()
     user = c.users.get(user_id)
     if user is None:
         raise KeyError(user_id)
     payload = request.get_json(silent=True) or {}
-    author = current_user() or E.User(
-        username="local", full_name="Local user", role=E.ROLE_SUPERVISOR, password_hash="-", id="local"
-    )
+    author = _manager()
     c.user_service.update(
         user,
         author=author,
@@ -254,16 +301,15 @@ def update_user(user_id: str):
     )
     return jsonify(user_json(user))
 
+
 @users_bp.delete("/<user_id>")
 def delete_user(user_id: str):
-    """Delete an analyst who owns no case (supervisor only)."""
-    require_supervisor()
+    """Delete an analyst who owns no case (supervisor or administrator), or
+    a supervisor who is not the last active one (administrator only)."""
+    require_user_manager()
     c = _container()
     user = c.users.get(user_id)
     if user is None:
         raise KeyError(user_id)
-    author = current_user() or E.User(
-        username="local", full_name="Local user", role=E.ROLE_SUPERVISOR, password_hash="-", id="local"
-    )
-    c.user_service.delete(user, author)
+    c.user_service.delete(user, _manager())
     return "", 204

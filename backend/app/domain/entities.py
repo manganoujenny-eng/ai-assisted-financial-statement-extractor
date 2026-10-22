@@ -363,7 +363,8 @@ class AiAnalysis:
 # --- Users and roles (item 5) ---------------------------------------------
 ROLE_ANALYST = "ANALYST"
 ROLE_SUPERVISOR = "SUPERVISOR"
-ROLES = (ROLE_ANALYST, ROLE_SUPERVISOR)
+ROLE_ADMIN = "ADMIN"
+ROLES = (ROLE_ANALYST, ROLE_SUPERVISOR, ROLE_ADMIN)
 
 
 @dataclass
@@ -378,6 +379,12 @@ class User:
       cases, manages users and sees the cross-analyst dashboard. A
       supervisor does NOT create cases, upload, delete documents, extract
       or correct: the one who validates is not the one who prepares.
+    * ADMIN — runs the system: manages every supervisor and analyst
+      account, reads the whole audit log and the database (read-only),
+      manages the evaluation corpus and runs the campaigns. An
+      administrator neither prepares nor validates a case, so the
+      separation above stays intact. Administrator accounts are created
+      with ``backend/create_admin.py``, never from the screens.
 
     ``full_name`` is what every record shows (validated_by, corrected_by,
     a case's analyst, audit authors). ``username`` is only for signing in.
@@ -400,6 +407,14 @@ class User:
     @property
     def is_supervisor(self) -> bool:
         return self.role == ROLE_SUPERVISOR
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == ROLE_ADMIN
+
+    @property
+    def is_analyst(self) -> bool:
+        return self.role == ROLE_ANALYST
 
 
 

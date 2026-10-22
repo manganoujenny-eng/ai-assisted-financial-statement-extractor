@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom'
 import * as api from '../api/client.js'
 import StatusPill from '../components/StatusPill.jsx'
 import { labelByCode, useI18n } from '../i18n/index.jsx'
+import { interpretationText, reasonText } from '../i18n/interpretation.js'
 
 const STATUS_ORDER = [
   'CREATED',
@@ -116,7 +117,7 @@ function CaseCard({ analysisCase, showAnalyst = false }) {
                   <td className="num">
                     {ratio.status === 'COMPUTED' ? `${ratio.value} ${ratio.unit || ''}` : '—'}
                   </td>
-                  <td>{ratio.interpretation?.text || ratio.reason || '—'}</td>
+                  <td>{interpretationText(t, ratio) || reasonText(t, ratio.reason) || '—'}</td>
                 </tr>
               ))}
             </tbody>

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 
 def register_blueprints(app) -> None:
+    from .admin import admin_bp
     from .auth import auth_bp, require_login, users_bp
     from .routes import bp
 
-    for blueprint in (bp, auth_bp, users_bp):
+    for blueprint in (bp, auth_bp, users_bp, admin_bp):
         app.register_blueprint(blueprint)
 
     # Item 5 — every /api call needs a signed-in user (see auth.py), except

@@ -88,6 +88,7 @@ function unreachableText(status) {
 export const TIME_LIMITS_MS = {
   extraction: 10 * 60 * 1000, // 10 minutes: a large scanned package by OCR
   analysis: 4 * 60 * 1000, //    4 minutes: ratios + the AI commentary
+  campaign: 15 * 60 * 1000, //  15 minutes: every corpus package extracted
 }
 
 let runningTasks = 0
@@ -96,16 +97,21 @@ function announce(kind) {
   window.dispatchEvent(new CustomEvent('long-task', { detail: { kind, running: runningTasks } }))
 }
 
+const TASK_NAMES = {
+  en: { extraction: 'extraction', analysis: 'analysis', campaign: 'campaign' },
+  fr: { extraction: "L'extraction", analysis: "L'analyse", campaign: 'La campagne' },
+}
+
 function timeoutText(kind, minutes) {
   if (language === 'fr') {
     return (
-      `${kind === 'extraction' ? "L'extraction" : "L'analyse"} n'a pas répondu en ${minutes} minutes : la page a arrêté d'attendre. ` +
+      `${TASK_NAMES.fr[kind] || "L'opération"} n'a pas répondu en ${minutes} minutes : la page a arrêté d'attendre. ` +
       'Le serveur a peut-être terminé entre-temps, ou s\'est arrêté. Rechargez la page pour voir l\'état réel du dossier ; ' +
       's\'il reste bloqué, regardez la console du backend Flask.'
     )
   }
   return (
-    `The ${kind} did not answer within ${minutes} minutes, so the page stopped waiting. ` +
+    `The ${TASK_NAMES.en[kind] || 'operation'} did not answer within ${minutes} minutes, so the page stopped waiting. ` +
     'The server may have finished in the meantime, or it may have stopped. Reload the page to see the case\'s real state; ' +
     'if it stays stuck, look at the Flask backend console.'
   )
@@ -173,6 +179,7 @@ export function getCurrentUser() {
 }
 
 export const isSupervisor = () => currentUser?.role === 'SUPERVISOR'
+export const isAdmin = () => currentUser?.role === 'ADMIN'
 
 // Kept for the pages that already call it: the signed-in person's name.
 export function getAnalystName() {
@@ -189,12 +196,12 @@ export const changePassword = (currentPassword, newPassword) =>
     json('POST', { current_password: currentPassword, new_password: newPassword })
   )
 
-/* --- users (supervisor) --------------------------------------------------- */
+/* --- users (supervisor or administrator) ---------------------------------- */
 export const listUsers = () => request('/users')
-// A supervisor manages analysts only: supervisor accounts are created in the
-// database (backend/create_supervisor.py), so a new user is always an analyst.
+// A supervisor adds analysts only; the administrator chooses ANALYST or
+// SUPERVISOR (user.role). Administrator accounts: backend/create_admin.py.
 export const createUser = (user) =>
-  request('/users', json('POST', { ...user, role: 'ANALYST' }))
+  request('/users', json('POST', { role: 'ANALYST', ...user }))
 export const updateUser = (userId, changes) => request(`/users/${userId}`, json('PATCH', changes))
 // Only an analyst who owns no case; one with cases is deactivated instead.
 export const deleteUser = (userId) => request(`/users/${userId}`, { method: 'DELETE' })
@@ -375,3 +382,68 @@ export const approveAiAnalysis = (analysisId, sections, author) =>
 /* --- evaluation ---------------------------------------------------------- */
 export const runSensitivity = (groundTruth, items) =>
   request('/evaluations', json('POST', { ground_truth: groundTruth, items }))
+
+
+/* --- administration (administrator only) ---------------------------------- */
+// Everything the administrator used to do in pgAdmin or with scripts.
+function queryString(params = {}) {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value)
+  })
+  return query.toString()
+}
+
+export const getAdminOverview = () => request('/admin/overview')
+
+// filters: { q, author, action, entity, from, to, page, per_page }
+export const getAudit = (filters) => request(`/admin/audit?${queryString(filters)}`)
+// A link the browser downloads (same filters, every matching line).
+export const auditCsvUrl = (filters) => {
+  const { page, per_page: perPage, ...rest } = filters || {}
+  return `${BASE}/admin/audit.csv?${queryString(rest)}`
+}
+
+// The evaluation corpus: one folder per package (RP001, RP002...).
+export const getCorpus = () => request('/admin/corpus')
+export const createCorpusPackage = (name) =>
+  request('/admin/corpus/packages', json('POST', { name }))
+export function uploadCorpusFiles(packageName, files) {
+  const form = new FormData()
+  Array.from(files).forEach((file) => form.append('files', file))
+  return request(`/admin/corpus/${encodeURIComponent(packageName)}/files`, {
+    method: 'POST',
+    body: form,
+  })
+}
+export const deleteCorpusFile = (packageName, fileName) =>
+  request(
+    `/admin/corpus/${encodeURIComponent(packageName)}/files/${encodeURIComponent(fileName)}`,
+    { method: 'DELETE' }
+  )
+// A sensitivity test on one package's hand reading (no extraction).
+export const runPackageSensitivity = (packageName, note) =>
+  request(
+    `/admin/corpus/${encodeURIComponent(packageName)}/sensitivity`,
+    json('POST', { note: note || null })
+  )
+export const deleteCorpusPackage = (packageName) =>
+  request(`/admin/corpus/${encodeURIComponent(packageName)}`, { method: 'DELETE' })
+
+// Delete one stored campaign (administrator only; kept in the audit log).
+export const deleteCampaign = (id) =>
+  request(`/admin/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+// Stored campaigns (exercise 20) — newest first; kind CORPUS or SENSITIVITY.
+export const listCampaigns = (kind) =>
+  request(`/evaluations${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`)
+export const getCampaign = (id) => request(`/evaluations/${id}`)
+export const runCorpusCampaign = (note) =>
+  longTask('campaign', (signal) =>
+    request('/evaluations/corpus', { ...json('POST', { note: note || null }), signal })
+  )
+
+// The database, read-only.
+export const getTables = () => request('/admin/tables')
+export const getTableRows = (name, { page = 1, q = '' } = {}) =>
+  request(`/admin/tables/${encodeURIComponent(name)}?${queryString({ page, q, per_page: 50 })}`)

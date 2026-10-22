@@ -69,6 +69,9 @@ class Container:
     user_service: UserService
     #: Week 7 campaigns (exercise 20).
     evaluations: EvaluationRepository
+    #: The SQLAlchemy session with STORAGE=sql, else None. Only the
+    #: administrator's read-only data browser uses it directly.
+    database: object | None = None
 
 
 def build_container(config: Config | None = None) -> Container:
@@ -98,6 +101,7 @@ def build_container(config: Config | None = None) -> Container:
         ai_analyses = SqlAiAnalysisRepository(session)
         users = SqlUserRepository(session)
         evaluations = SqlEvaluationRepository(session)
+        database = session
     else:
         cases = InMemoryCaseRepository()
         documents = InMemoryDocumentRepository()
@@ -107,6 +111,7 @@ def build_container(config: Config | None = None) -> Container:
         ai_analyses = InMemoryAiAnalysisRepository()
         users = InMemoryUserRepository()
         evaluations = InMemoryEvaluationRepository()
+        database = None
 
     # Item 4 — rule-based for figures, checks and ratios (above and in the
     # services); the LLM only writes commentary on them, as a draft an
@@ -170,6 +175,7 @@ def build_container(config: Config | None = None) -> Container:
         users=users,
         user_service=UserService(users, audit, cases),
         evaluations=evaluations,
+        database=database,
     )
 
 

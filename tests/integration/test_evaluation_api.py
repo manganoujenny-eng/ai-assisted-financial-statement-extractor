@@ -17,7 +17,8 @@ def app(tmp_path):
     app = create_app(Config(storage="memory", upload_dir=tmp_path, auth_required=True))
     c = app.config["container"]
     for username, full_name, role in [("paul", "Paul Mbarga", E.ROLE_SUPERVISOR),
-                                      ("helena", "Helena Ndongo", E.ROLE_ANALYST)]:
+                                      ("helena", "Helena Ndongo", E.ROLE_ANALYST),
+                                      ("ada", "Ada Admin", E.ROLE_ADMIN)]:
         c.users.add(E.User(username=username, full_name=full_name, role=role,
                            password_hash=generate_password_hash(PASSWORD)))
     return app
@@ -55,18 +56,25 @@ def test_an_unknown_campaign_is_a_404(app):
 def test_a_wrong_kind_filter_is_refused(app):
     assert _login(app, "helena").get("/api/evaluations?kind=OTHER").status_code == 422
 
-
-def test_only_a_supervisor_runs_the_corpus_campaign(app, tmp_path, monkeypatch):
+def test_only_the_administrator_runs_the_corpus_campaign(app, tmp_path, monkeypatch):
     monkeypatch.setenv("CORPUS_DIR", str(tmp_path / "empty-corpus"))
     (tmp_path / "empty-corpus").mkdir()
     assert _login(app, "helena").post("/api/evaluations/corpus").status_code == 403
-    answer = _login(app, "paul").post("/api/evaluations/corpus", json={"note": "empty"})
+    assert _login(app, "paul").post("/api/evaluations/corpus").status_code == 403
+    answer = _login(app, "ada").post("/api/evaluations/corpus", json={"note": "empty"})
     assert answer.status_code == 201
     body = answer.get_json()
-    assert body["kind"] == "CORPUS" and body["author"] == "Paul Mbarga"
+    assert body["kind"] == "CORPUS" and body["author"] == "Ada Admin"
     assert body["headline"]["packages"] == 0
 
 
+def test_a_campaign_run_is_in_the_audit_log(app, tmp_path, monkeypatch):
+    monkeypatch.setenv("CORPUS_DIR", str(tmp_path))
+    ada = _login(app, "ada")
+    campaign_id = ada.post("/api/evaluations/corpus", json={"note": "audited"}).get_json()["id"]
+    entries = ada.get("/api/admin/audit?action=CAMPAIGN_RUN").get_json()["entries"]
+    assert [(e["entity_id"], e["author"]) for e in entries] == [(campaign_id, "Ada Admin")]
+
 def test_a_missing_corpus_folder_is_a_404(app, tmp_path, monkeypatch):
     monkeypatch.setenv("CORPUS_DIR", str(tmp_path / "nowhere"))
-    assert _login(app, "paul").post("/api/evaluations/corpus").status_code == 404
+    assert _login(app, "ada").post("/api/evaluations/corpus").status_code == 404

@@ -1,31 +1,43 @@
-/* Users — supervisor only.
+/* Users — supervisors and the administrator.
  *
  * A supervisor manages ANALYSTS: add one, rename, reset a forgotten
  * password, deactivate / reactivate (a deactivated user cannot sign in and
  * is signed out at once; their cases and every record they signed stay),
  * and delete one who owns no case yet.
  *
- * Supervisors are listed but cannot be changed here: their accounts are
- * created directly in the database (backend/create_supervisor.py) and each
- * supervisor manages their own name and password on My account. The
- * backend refuses the same things (409), so hiding the buttons only keeps
- * the page honest.
+ * The administrator does the same for SUPERVISORS too: add one (choosing
+ * the role when the account is created), rename, reset, deactivate,
+ * reactivate, delete — never the last active supervisor.
+ *
+ * Nobody manages an administrator here: those accounts are created with
+ * backend/create_admin.py, and every user (administrator included) manages
+ * their own name and password on My account. The backend refuses the same
+ * things (409), so hiding the buttons only keeps the page honest.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../api/client.js'
 import DangerDialog from '../components/DangerDialog.jsx'
 import { useI18n } from '../i18n/index.jsx'
 
-const EMPTY = { username: '', full_name: '', password: '' }
+const EMPTY = { username: '', full_name: '', password: '', role: 'ANALYST' }
 
-function UserRow({ user, isMe, onSaved, onError, onDelete }) {
+/* May the signed-in person change this account? */
+function canManage(viewer, user) {
+  if (user.id === viewer.id) return false // their own: My account
+  if (user.role === 'ADMIN') return false
+  if (user.role === 'SUPERVISOR') return viewer.role === 'ADMIN'
+  return true // an analyst: supervisor or administrator
+}
+
+function UserRow({ user, viewer, onSaved, onError, onDelete }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ full_name: user.full_name, password: '' })
   const [busy, setBusy] = useState(false)
   const { t } = useI18n()
-  const isSupervisor = user.role === 'SUPERVISOR'
+  const isMe = user.id === viewer.id
+  const manageable = canManage(viewer, user)
 
   async function save(changes) {
     try {
@@ -95,18 +107,16 @@ function UserRow({ user, isMe, onSaved, onError, onDelete }) {
         {isMe && <span className="faint"> ({t('users.you')})</span>}
       </td>
       <td>
-        <span className={`pill ${isSupervisor ? 'accent' : 'neutral'}`}>
+        <span className={`pill ${user.role === 'ANALYST' ? 'neutral' : 'accent'}`}>
           {t(`role.${user.role}`)}
         </span>
       </td>
       <td>{user.active ? t('users.active') : t('users.deactivated')}</td>
       <td>
-        {isSupervisor ? (
-          isMe ? (
-            <Link className="button-like" to="/account">{t('nav.account')}</Link>
-          ) : (
-            <span className="faint">{t('users.supervisorManagedElsewhere')}</span>
-          )
+        {isMe ? (
+          <Link className="button-like" to="/account">{t('nav.account')}</Link>
+        ) : !manageable ? (
+          <span className="faint">{t('users.supervisorManagedElsewhere')}</span>
         ) : (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button type="button" disabled={busy} onClick={() => setEditing(true)}>
@@ -131,9 +141,12 @@ export default function UsersPage({ currentUser }) {
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
-  // The analyst waiting for the delete confirmation, or null.
+  const [roleFilter, setRoleFilter] = useState('')
+  const [search, setSearch] = useState('')
+  // The account waiting for the delete confirmation, or null.
   const [pendingDelete, setPendingDelete] = useState(null)
   const { t } = useI18n()
+  const admin = currentUser.role === 'ADMIN'
 
   async function reload() {
     try {
@@ -153,12 +166,23 @@ export default function UsersPage({ currentUser }) {
     return () => clearTimeout(timer)
   }, [message])
 
+  const shown = useMemo(() => {
+    const wanted = search.trim().toLowerCase()
+    return (users || []).filter(
+      (user) =>
+        (!roleFilter || user.role === roleFilter) &&
+        (!wanted ||
+          user.full_name.toLowerCase().includes(wanted) ||
+          user.username.toLowerCase().includes(wanted))
+    )
+  }, [users, roleFilter, search])
+
   async function create(event) {
     event.preventDefault()
     try {
       setBusy(true)
       setError(null)
-      const user = await api.createUser(form)
+      const user = await api.createUser(admin ? form : { ...form, role: 'ANALYST' })
       setForm(EMPTY)
       setMessage(t('users.created', { name: user.full_name, username: user.username }))
       await reload()
@@ -185,13 +209,13 @@ export default function UsersPage({ currentUser }) {
   return (
     <>
       <h2 className="page-title">{t('nav.users')}</h2>
-      <p className="page-subtitle">{t('users.subtitleAnalysts')}</p>
+      <p className="page-subtitle">{admin ? t('users.subtitleAdmin') : t('users.subtitleAnalysts')}</p>
 
       {error && <div className="banner fail">{error}</div>}
       {message && <div className="banner info">{message}</div>}
 
       <form className="card" onSubmit={create}>
-        <h3 style={{ marginTop: 0 }}>{t('users.addAnalystTitle')}</h3>
+        <h3 style={{ marginTop: 0 }}>{admin ? t('users.addTitle') : t('users.addAnalystTitle')}</h3>
         <div
           style={{
             display: 'grid',
@@ -219,6 +243,19 @@ export default function UsersPage({ currentUser }) {
               required
             />
           </label>
+          {admin && (
+            <label>
+              {t('users.role')}
+              <select
+                value={form.role}
+                onChange={(event) => setForm({ ...form, role: event.target.value })}
+                style={{ display: 'block', width: '100%' }}
+              >
+                <option value="ANALYST">{t('users.analyst')}</option>
+                <option value="SUPERVISOR">{t('users.supervisor')}</option>
+              </select>
+            </label>
+          )}
           <label>
             {t('users.firstPassword')}
             <input
@@ -232,13 +269,36 @@ export default function UsersPage({ currentUser }) {
             />
           </label>
           <button type="submit" className="primary" disabled={busy}>
-            {busy ? t('addItem.adding') : t('users.addAnalyst')}
+            {busy ? t('addItem.adding') : admin ? t('users.add') : t('users.addAnalyst')}
           </button>
         </div>
-        <p className="faint" style={{ margin: '12px 0 0' }}>{t('users.supervisorsNote')}</p>
+        <p className="faint" style={{ margin: '12px 0 0' }}>
+          {admin ? t('users.adminNote') : t('users.supervisorsNoteAdmin')}
+        </p>
       </form>
 
       <div className="card">
+        <div className="adm-table-head">
+          <select
+            value={roleFilter}
+            onChange={(event) => setRoleFilter(event.target.value)}
+            aria-label={t('users.role')}
+            style={{ width: 'auto' }}
+          >
+            <option value="">{t('users.allRoles')}</option>
+            <option value="ANALYST">{t('users.analyst')}</option>
+            <option value="SUPERVISOR">{t('users.supervisor')}</option>
+            <option value="ADMIN">{t('users.administrator')}</option>
+          </select>
+          <input
+            type="search"
+            value={search}
+            placeholder={t('users.searchPlaceholder')}
+            aria-label={t('users.searchPlaceholder')}
+            onChange={(event) => setSearch(event.target.value)}
+            className="adm-table-search"
+          />
+        </div>
         {users === null ? (
           <p className="muted">{t('common.loading')}</p>
         ) : (
@@ -254,11 +314,11 @@ export default function UsersPage({ currentUser }) {
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {shown.map((user) => (
                   <UserRow
                     key={user.id}
                     user={user}
-                    isMe={user.id === currentUser.id}
+                    viewer={currentUser}
                     onError={setError}
                     onDelete={(target) => setPendingDelete({ user: target, working: false, error: null })}
                     onSaved={(saved) => {
@@ -282,7 +342,11 @@ export default function UsersPage({ currentUser }) {
           onConfirm={confirmDelete}
           onCancel={() => setPendingDelete(null)}
         >
-          <p>{t('users.deleteBody')}</p>
+          <p>
+            {pendingDelete.user.role === 'SUPERVISOR'
+              ? t('users.deleteSupervisorBody')
+              : t('users.deleteBody')}
+          </p>
           {pendingDelete.error && <div className="banner fail">{pendingDelete.error}</div>}
         </DangerDialog>
       )}

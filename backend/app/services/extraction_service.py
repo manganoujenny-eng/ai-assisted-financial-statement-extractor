@@ -67,7 +67,9 @@ class ExtractionService:
         self.audit = audit
 
     # --- FR-02 ----------------------------------------------------------
-    def register_document(self, case: E.AnalysisCase, path: str) -> E.SourceDocument:
+    def register_document(
+        self, case: E.AnalysisCase, path: str, author: str = "system"
+    ) -> E.SourceDocument:
         fingerprint = sha256_of(path)
         # Scoped to case.id on purpose (FR-02/NFR-08): the port requires
         # (sha256, case_id), and this call site used to pass only the
@@ -92,7 +94,7 @@ class ExtractionService:
                 entity="SourceDocument",
                 entity_id=document.id,
                 action="UPLOADED",
-                author="system",
+                author=author,
                 detail={"file_name": document.file_name, "sha256": fingerprint},
             )
         )

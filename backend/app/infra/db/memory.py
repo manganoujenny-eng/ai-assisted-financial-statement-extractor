@@ -152,6 +152,45 @@ class InMemoryAuditLog:
     def all(self) -> list[E.AuditEntry]:
         return list(self._entries)
 
+    def search(self, query) -> tuple[list[E.AuditEntry], int]:
+        found = [e for e in self._entries if _audit_matches(e, query)]
+        found.sort(key=lambda e: e.at, reverse=True)
+        return found[query.offset : query.offset + query.limit], len(found)
+
+    def facets(self) -> dict[str, list[str]]:
+        return {
+            "authors": sorted({e.author for e in self._entries}, key=str.casefold),
+            "actions": sorted({e.action for e in self._entries}),
+            "entities": sorted({e.entity for e in self._entries}),
+        }
+
+
+def _naive(moment):
+    """Compare datetimes whether or not they carry a time zone."""
+    return moment.replace(tzinfo=None) if getattr(moment, "tzinfo", None) else moment
+
+
+def _audit_matches(entry: E.AuditEntry, query) -> bool:
+    if query.author and entry.author != query.author:
+        return False
+    if query.action and entry.action != query.action:
+        return False
+    if query.entity and entry.entity != query.entity:
+        return False
+    if query.entity_id and entry.entity_id != query.entity_id:
+        return False
+    if query.since and _naive(entry.at) < _naive(query.since):
+        return False
+    if query.until and _naive(entry.at) >= _naive(query.until):
+        return False
+    if query.text:
+        haystack = " ".join(
+            [entry.action, entry.author, entry.entity, entry.entity_id, str(entry.detail or "")]
+        ).casefold()
+        if query.text.casefold() not in haystack:
+            return False
+    return True
+
 
 
 class InMemoryAiAnalysisRepository:
@@ -221,3 +260,6 @@ class InMemoryEvaluationRepository:
     def list(self, kind: str | None = None) -> list[E.EvaluationCampaign]:
         found = [c for c in self._campaigns.values() if kind is None or c.kind == kind]
         return sorted(found, key=lambda c: c.run_at, reverse=True)
+
+    def delete(self, campaign_id: str) -> bool:
+        return self._campaigns.pop(campaign_id, None) is not None

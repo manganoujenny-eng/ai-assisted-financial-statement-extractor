@@ -195,12 +195,33 @@ class DatasetRepository(Protocol):
     def delete(self, dataset_id: str) -> None: ...
 
 
+@dataclass
+class AuditQuery:
+    """What the administrator's audit page asks for. Every filter is
+    optional; ``text`` looks in the action, author, entity, entity id and
+    detail. ``since``/``until`` are datetimes (``until`` excluded)."""
+
+    author: str | None = None
+    action: str | None = None
+    entity: str | None = None
+    entity_id: str | None = None
+    text: str | None = None
+    since: object | None = None
+    until: object | None = None
+    offset: int = 0
+    limit: int = 50
+
+
 @runtime_checkable
 class AuditLog(Protocol):
     """FR-22. Append-only: there is no update and no delete in this port."""
 
     def record(self, entry: AuditEntry) -> None: ...
     def list_for(self, entity: str, entity_id: str) -> list[AuditEntry]: ...
+    #: Newest first: (one page of entries, how many match in total).
+    def search(self, query: AuditQuery) -> tuple[list[AuditEntry], int]: ...
+    #: The distinct authors, actions and entities, for the page's filters.
+    def facets(self) -> dict[str, list[str]]: ...
 
 
 
@@ -252,10 +273,14 @@ class UserRepository(Protocol):
 
 
 class EvaluationRepository(Protocol):
-    """Week 7 campaigns (exercise 20). No save(), no delete: a measurement
-    is written once and kept, a new one is a new campaign."""
+    """Week 7 campaigns (exercise 20). No save(): a measurement is written
+    once and never changed, a new one is a new campaign. delete() exists for
+    the administrator only (a trial run, a campaign made on a wrong corpus);
+    the audit log keeps the trace of what was deleted."""
 
     def add(self, campaign: EvaluationCampaign) -> None: ...
     def get(self, campaign_id: str) -> EvaluationCampaign | None: ...
     #: Newest first; ``kind`` filters on CORPUS or SENSITIVITY.
     def list(self, kind: str | None = None) -> list[EvaluationCampaign]: ...
+    #: True when the campaign existed (its packages go with it).
+    def delete(self, campaign_id: str) -> bool: ...

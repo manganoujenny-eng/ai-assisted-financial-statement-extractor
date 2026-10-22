@@ -33,6 +33,7 @@ from .auth import (
     actor_role,
     auth_required,
     current_user,
+    require_admin,
     require_analyst,
     require_case_owner,
     require_supervisor,
@@ -127,7 +128,18 @@ def create_case():
     )
     if not case.client or not case.fiscal_year:
         raise ValueError("client and fiscal_year are required")
-    container().cases.add(case)
+    c = container()
+    c.cases.add(case)
+    # Who opened which case: the administrator's audit log starts here.
+    c.audit.record(
+        E.AuditEntry(
+            entity="AnalysisCase",
+            entity_id=case.id,
+            action="CREATED",
+            author=actor(case.analyst, default="analyst"),
+            detail={"client": case.client, "fiscal_year": case.fiscal_year},
+        )
+    )
     return jsonify(case_json(case)), 201
 
 def _case_analyst(payload: dict) -> str | None:
@@ -218,6 +230,10 @@ def delete_case(case_id: str):
     payload = request.get_json(silent=True) or {}
 
     role = actor_role(payload.get("role"))
+    if role == "admin":
+        # The administrator runs the system; the cases belong to the
+        # analysts who prepared them and the supervisors who validated them.
+        raise Forbidden("the administrator does not delete cases")
     if role != "supervisor":
         require_case_owner(case)
     else:
@@ -249,7 +265,9 @@ def upload_document(case_id: str):
     target = os.path.join(c.config.upload_dir, f"{case.id}__{filename}")
     uploaded.save(target)
 
-    document = c.extraction.register_document(case, target)
+    document = c.extraction.register_document(
+        case, target, author=actor(case.analyst, default="analyst")
+    )
     c.cases.save(case)
     return jsonify(document_json(document)), 201
 
@@ -1273,6 +1291,21 @@ def export_case(case_id: str):
 # ==========================================================================
 # Evaluation — Part D (week 7). Every campaign is stored (exercise 20).
 # ==========================================================================
+def _audit_campaign(c, campaign: E.EvaluationCampaign) -> None:
+    """Who ran which campaign, in the audit log like every other action."""
+    s = campaign.summary or {}
+    c.audit.record(
+        E.AuditEntry(
+            entity="EvaluationCampaign",
+            entity_id=campaign.id,
+            action="CAMPAIGN_RUN",
+            author=campaign.author or "evaluation",
+            detail={"kind": campaign.kind, "note": campaign.note,
+                    "packages": s.get("packages"), "evaluated": s.get("evaluated")},
+        )
+    )
+
+
 def _campaign_json(campaign: E.EvaluationCampaign, full: bool = True) -> dict:
     s = campaign.summary or {}
     silent = s.get("silent_false_positives")
@@ -1353,6 +1386,7 @@ def run_evaluation():
         },
     )
     c.evaluations.add(campaign)
+    _audit_campaign(c, campaign)
     return jsonify({**result, "id": campaign.id, "run_at": campaign.run_at.isoformat()}), 201
 
 
@@ -1362,11 +1396,11 @@ def run_corpus_evaluation():
 
     The same campaign as ``backend/evaluate_corpus.py``, started from the
     API, on the server's corpus folder (CORPUS_DIR in .env, else
-    data/corpus — never a path sent by the browser). Supervisors only: it
-    reads every package, and the result is quoted in the thesis.
+    data/corpus — never a path sent by the browser). The administrator
+    only: it reads every package, and the result is quoted in the thesis.
     Body (optional): {"note": "..."}. Answers the stored campaign.
     """
-    require_supervisor()
+    require_admin()
     from ..services.corpus_campaign import DEFAULT_CORPUS, run_campaign, to_entity
 
     c = container()
@@ -1382,6 +1416,7 @@ def run_corpus_evaluation():
         note=(str(payload["note"]).strip() or None) if payload.get("note") else None,
     )
     c.evaluations.add(campaign)
+    _audit_campaign(c, campaign)
     return jsonify(_campaign_json(campaign)), 201
 
 

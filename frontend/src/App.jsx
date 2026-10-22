@@ -9,15 +9,23 @@ import LoginPage from './pages/LoginPage.jsx'
 import AccountPage from './pages/AccountPage.jsx'
 import UsersPage from './pages/UsersPage.jsx'
 import SupervisorPage from './pages/SupervisorPage.jsx'
+import AdminOverviewPage from './pages/AdminOverviewPage.jsx'
+import AdminAuditPage from './pages/AdminAuditPage.jsx'
+import AdminCampaignsPage from './pages/AdminCampaignsPage.jsx'
+import AdminDataPage from './pages/AdminDataPage.jsx'
 import NotificationBell from './components/NotificationBell.jsx'
 import BrandMark, { BrandSymbol } from './components/BrandMark.jsx'
 import BusyOverlay from './components/BusyOverlay.jsx'
 import { LanguageSwitcher, useI18n } from './i18n/index.jsx'
 
 /* Item 5 — nothing is shown until someone is signed in. Who is signed in
- * comes from the backend session (GET /api/auth/me); every action is
+ * comes from the backend session (GET/api/auth/me); every action is
  * recorded under that person, and supervisor screens only exist for
- * supervisors (the backend refuses them to anyone else regardless). */
+ * supervisors (the backend refuses them to anyone else regardless).
+ *
+ * The administrator gets their own area instead of the case screens:
+ * Overview, Users, Audit log, Campaigns, Data. They neither prepare nor
+ * validate a case, so Cases / My cases / notifications are not shown. */
 export default function App() {
   const [user, setUser] = useState(undefined) // undefined = still checking
   const [menuOpen, setMenuOpen] = useState(false)
@@ -67,10 +75,13 @@ export default function App() {
   }
 
   const supervisor = user.role === 'SUPERVISOR'
+  const admin = user.role === 'ADMIN'
 
   return (
     <>
-      <header className={`app-header${menuOpen ? ' open' : ''}`}>
+      {/* The administrator has five menus: their header folds into the
+          menu button earlier than the others (wide-nav, app.css). */}
+      <header className={`app-header${menuOpen ? ' open' : ''}${admin ? ' wide-nav' : ''}`}>
         <div className="app-header-inner">
           <Link to="/" className="brand-link" aria-label="EB-PARTNERS AUDIT">
             <BrandMark />
@@ -91,19 +102,31 @@ export default function App() {
           </button>
 
           <nav className="app-nav">
-            <NavLink to="/" end>{t('nav.cases')}</NavLink>
-            <NavLink to="/my-cases">{t('nav.myCases')}</NavLink>
-            {supervisor && <NavLink to="/supervisor">{t('nav.supervisor')}</NavLink>}
-            {supervisor && <NavLink to="/users">{t('nav.users')}</NavLink>}
+            {admin ? (
+              <>
+                <NavLink to="/admin" end>{t('nav.adminOverview')}</NavLink>
+                <NavLink to="/users">{t('nav.users')}</NavLink>
+                <NavLink to="/admin/audit">{t('nav.adminAudit')}</NavLink>
+                <NavLink to="/admin/campaigns">{t('nav.adminCampaigns')}</NavLink>
+                <NavLink to="/admin/data">{t('nav.adminData')}</NavLink>
+              </>
+            ) : (
+              <>
+                <NavLink to="/" end>{t('nav.cases')}</NavLink>
+                <NavLink to="/my-cases">{t('nav.myCases')}</NavLink>
+                {supervisor && <NavLink to="/supervisor">{t('nav.supervisor')}</NavLink>}
+                {supervisor && <NavLink to="/users">{t('nav.users')}</NavLink>}
+              </>
+            )}
           </nav>
 
           <div className="app-tools">
-            <NotificationBell />
+            {!admin && <NotificationBell />}
             <LanguageSwitcher />
             <NavLink to="/account" className="user-chip" title={t('nav.account')}>
               <span className="user-avatar" aria-hidden="true">{initials(user.full_name)}</span>
               <strong>{user.full_name}</strong>
-              <span className={`pill ${supervisor ? 'accent' : 'neutral'}`}>
+              <span className={`pill ${supervisor || admin ? 'accent' : 'neutral'}`}>
                 {t(`role.${user.role}`)}
               </span>
             </NavLink>
@@ -116,6 +139,17 @@ export default function App() {
         </div>
       </header>
       <main>
+        {admin ? (
+          <Routes>
+            <Route path="/admin" element={<AdminOverviewPage />} />
+            <Route path="/admin/audit" element={<AdminAuditPage />} />
+            <Route path="/admin/campaigns" element={<AdminCampaignsPage />} />
+            <Route path="/admin/data" element={<AdminDataPage />} />
+            <Route path="/users" element={<UsersPage currentUser={user} />} />
+            <Route path="/account" element={<AccountPage user={user} onUpdated={signedIn} />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Routes>
+        ) : (
         <Routes>
           <Route path="/" element={<CasesPage />} />
           <Route path="/my-cases" element={<MyCasesPage />} />
@@ -132,6 +166,7 @@ export default function App() {
           <Route path="/cases/:caseId/dashboard" element={<DashboardPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        )}
       </main>
       <BusyOverlay />
     </>

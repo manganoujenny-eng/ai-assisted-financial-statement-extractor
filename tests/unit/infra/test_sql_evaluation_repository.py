@@ -84,3 +84,19 @@ def test_campaigns_are_listed_newest_first_and_filtered_by_kind():
         assert [c.id for c in repo.list()] == [second.id, first.id]
         assert [c.id for c in repo.list(E.CAMPAIGN_CORPUS)] == [first.id]
         assert repo.get("unknown") is None
+
+
+def test_a_campaign_is_deleted_with_its_packages():
+    session = _session()
+    for repo in (SqlEvaluationRepository(session), InMemoryEvaluationRepository()):
+        kept, gone = _campaign(), _campaign()
+        repo.add(kept)
+        repo.add(gone)
+        assert repo.delete(gone.id) is True
+        assert repo.get(gone.id) is None
+        assert [c.id for c in repo.list()] == [kept.id]
+        assert repo.delete("unknown") is False
+        if isinstance(repo, SqlEvaluationRepository):
+            # its package rows went with it, the other campaign's stayed
+            rows = session.scalars(select(EvaluationPackageRow)).all()
+            assert [r.campaign_id for r in rows] == [kept.id]

@@ -32,6 +32,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from app.config import Config
+from app.domain import entities as E
 from app.services.corpus_campaign import (
     DEFAULT_CORPUS,
     JUDGED_CODES,
@@ -45,16 +46,18 @@ def pct(value: Decimal | None) -> str:
 
 
 def open_repository():
-    """The application's own database, or None when STORAGE is not sql."""
+    """The application's own database (campaigns, audit log), or
+    (None, None) when STORAGE is not sql."""
     config = Config()
     if config.storage != "sql":
-        return None
-    from app.infra.db.repositories import SqlEvaluationRepository  # noqa: PLC0415
+        return None, None
+    from app.infra.db.repositories import SqlAuditLog, SqlEvaluationRepository  # noqa: PLC0415
     from app.infra.db.session import create_schema, make_engine, make_session_factory  # noqa: PLC0415
 
     engine = make_engine(config.database_url)
     create_schema(engine)  # creates the two new tables the first time
-    return SqlEvaluationRepository(make_session_factory(engine)())
+    session = make_session_factory(engine)()
+    return SqlEvaluationRepository(session), SqlAuditLog(session)
 
 
 def main(argv: list[str]) -> int:
@@ -124,9 +127,18 @@ def main(argv: list[str]) -> int:
         for code, value in s["criticality"].items() if value > 0))
 
     entity = to_entity(campaign, author=args.author or getpass.getuser(), note=args.note)
-    repository = open_repository()
+    repository, audit = open_repository()
     if repository is not None:
         repository.add(entity)
+        audit.record(
+            E.AuditEntry(
+                entity="EvaluationCampaign", entity_id=entity.id, action="CAMPAIGN_RUN",
+                author=entity.author or "evaluate_corpus.py",
+                detail={"kind": entity.kind, "note": entity.note, "source": "evaluate_corpus.py",
+                        "packages": entity.summary.get("packages"),
+                        "evaluated": entity.summary.get("evaluated")},
+            )
+        )
         print(f"\nStored in the database: evaluation_campaign {entity.id}")
     else:
         print("\nSTORAGE is not 'sql' in .env: nothing stored in the database,"

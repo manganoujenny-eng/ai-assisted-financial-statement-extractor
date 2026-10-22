@@ -156,3 +156,26 @@ class TestCampaign:
         assert entity.kind == "CORPUS" and entity.author == "Helena"
         assert entity.summary["amplification"] == "2.80"
         assert entity.packages[0]["silent_false_positives"] == ["XB"]
+
+    # --- the details a failed campaign needs ---------------------------------
+    def test_every_item_and_ratio_is_reported_with_its_gap(tmp_path):
+        package(tmp_path, "RP001", BALANCED)
+        read = dict(BALANCED, XB=22_000_000)  # +10 %
+        p = run_campaign(tmp_path, extractor({"RP001": read})).packages[0]
+
+        xb = next(f for f in p.fields if f["code"] == "XB")
+        assert (xb["status"], xb["silent"]) == ("WRONG", True)
+        assert Decimal(xb["difference"]) == Decimal(2_000_000)
+        assert Decimal(xb["relative"]) == Decimal("0.1")
+        assert all(f["status"] == "RIGHT" for f in p.fields if f["code"] != "XB")
+
+        r4 = next(r for r in p.ratio_rows if r["code"] == "R4")
+        assert r4["right"] is False and r4["caused_by"] == ["XB"]
+        assert all(r["right"] for r in p.ratio_rows if r["code"] != "R4")
+        assert {c["code"] for c in p.checks} >= {"CHK001", "CHK002"}
+
+    def test_a_rejected_reference_says_which_check_fails(tmp_path):
+        package(tmp_path, "RP001", dict(BALANCED, AZ=5_699_223_032))
+        p = run_campaign(tmp_path, extractor({"RP001": BALANCED})).packages[0]
+        failing = [c for c in p.reference_checks if c["blocking"]]
+        assert [c["code"] for c in failing] == ["CHK002"]

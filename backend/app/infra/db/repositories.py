@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from ...domain import entities as E
@@ -418,18 +418,75 @@ class SqlAuditLog:
             .where(AuditLogRow.entity == entity, AuditLogRow.entity_id == entity_id)
             .order_by(AuditLogRow.at)
         ).all()
-        return [
-            E.AuditEntry(
-                id=row.id,
-                entity=row.entity,
-                entity_id=row.entity_id,
-                action=row.action,
-                author=row.author,
-                at=row.at,
-                detail=row.detail,
+        return [_audit_to_entity(row) for row in rows]
+
+    def search(self, query) -> tuple[list[E.AuditEntry], int]:
+        conditions = []
+        if query.author:
+            conditions.append(AuditLogRow.author == query.author)
+        if query.action:
+            conditions.append(AuditLogRow.action == query.action)
+        if query.entity:
+            conditions.append(AuditLogRow.entity == query.entity)
+        if query.entity_id:
+            conditions.append(AuditLogRow.entity_id == query.entity_id)
+        if query.since:
+            conditions.append(AuditLogRow.at >= _naive_utc(query.since))
+        if query.until:
+            conditions.append(AuditLogRow.at < _naive_utc(query.until))
+        if query.text:
+            like = f"%{query.text.lower()}%"
+            conditions.append(
+                or_(
+                    func.lower(AuditLogRow.action).like(like),
+                    func.lower(AuditLogRow.author).like(like),
+                    func.lower(AuditLogRow.entity).like(like),
+                    func.lower(AuditLogRow.entity_id).like(like),
+                    func.lower(cast(AuditLogRow.detail, String)).like(like),
+                )
             )
-            for row in rows
-        ]
+        total = self.session.scalar(
+            select(func.count()).select_from(AuditLogRow).where(*conditions)
+        )
+        rows = self.session.scalars(
+            select(AuditLogRow)
+            .where(*conditions)
+            .order_by(AuditLogRow.at.desc())
+            .offset(query.offset)
+            .limit(query.limit)
+        ).all()
+        return [_audit_to_entity(row) for row in rows], int(total or 0)
+
+    def facets(self) -> dict[str, list[str]]:
+        def distinct(column):
+            return [value for value in self.session.scalars(select(column).distinct()).all() if value]
+
+        return {
+            "authors": sorted(distinct(AuditLogRow.author), key=str.casefold),
+            "actions": sorted(distinct(AuditLogRow.action)),
+            "entities": sorted(distinct(AuditLogRow.entity)),
+        }
+
+
+def _audit_to_entity(row: AuditLogRow) -> E.AuditEntry:
+    return E.AuditEntry(
+        id=row.id,
+        entity=row.entity,
+        entity_id=row.entity_id,
+        action=row.action,
+        author=row.author,
+        at=row.at,
+        detail=row.detail,
+    )
+
+
+def _naive_utc(moment):
+    """The audit_log column has no time zone: compare in UTC, without it."""
+    from datetime import timezone  # noqa: PLC0415
+
+    if getattr(moment, "tzinfo", None):
+        return moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
 
 
 # --- mappers --------------------------------------------------------------
@@ -663,6 +720,14 @@ class SqlEvaluationRepository:
         if kind:
             query = query.where(EvaluationCampaignRow.kind == kind)
         return [_campaign_to_entity(row) for row in self.session.scalars(query).all()]
+
+    def delete(self, campaign_id: str) -> bool:
+        row = self.session.get(EvaluationCampaignRow, campaign_id)
+        if row is None:
+            return False
+        self.session.delete(row)  # its evaluation_package rows go with it (cascade)
+        self.session.commit()
+        return True
 
 
 def _campaign_to_entity(row: EvaluationCampaignRow) -> E.EvaluationCampaign:

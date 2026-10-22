@@ -239,6 +239,33 @@ class PackageResult:
     criticality: dict[str, Decimal] = field(default_factory=dict)
     interception_rate: Decimal | None = None
     interception_cells: tuple[int, int] = (0, 0)  # (intercepted, measurable)
+    # The full picture, so a failed campaign can be read item by item:
+    fields: list[dict] = field(default_factory=list)  # every judged item
+    ratio_rows: list[dict] = field(default_factory=list)  # every ratio
+    checks: list[dict] = field(default_factory=list)  # checks on the extraction
+    reference_checks: list[dict] = field(default_factory=list)  # checks on the hand reading
+
+
+def _check_row(outcome) -> dict:
+    return {
+        "code": outcome.code,
+        "label": outcome.label,
+        "severity": outcome.severity,
+        "passed": outcome.passed,
+        "blocking": outcome.is_blocking_failure,
+        "gap": str(outcome.gap) if outcome.gap is not None else None,
+        "message": outcome.message,
+        "items": list(outcome.items_used),
+    }
+
+
+def _gap(extracted, truth) -> tuple[str | None, str | None]:
+    """(extracted - truth, the same as a share of |truth|) as strings."""
+    if extracted is None or truth is None:
+        return None, None
+    difference = extracted - truth
+    share = (difference / abs(truth)) if truth != 0 else None
+    return str(difference), (str(share) if share is not None else None)
 
 
 def _ratio_row(result) -> dict:
@@ -280,6 +307,7 @@ def evaluate_package(
     result.annotation_problems = annotation.problems
     truth = annotation.judged()
     outcomes = run_all(truth)
+    result.reference_checks = [_check_row(o) for o in outcomes]
     if has_blocking_failure(outcomes):
         result.status = "REFERENCE_REJECTED"
         result.reason = "the hand reading fails: " + "; ".join(
@@ -325,7 +353,46 @@ def evaluate_package(
         result.field_accuracy, result.ratio_accuracy
     )
     result.silent_false_positives = evaluation.silent_false_positives(extracted, truth)
-    result.checks_failed_on_extraction = [o.code for o in run_all(extracted) if not o.passed]
+    extraction_checks = run_all(extracted)
+    result.checks_failed_on_extraction = [o.code for o in extraction_checks if not o.passed]
+    result.checks = [_check_row(o) for o in extraction_checks]
+
+    # Every judged item, right or wrong, and every ratio with the wrong
+    # items it uses — what the campaign page shows line by line.
+    silent = set(result.silent_false_positives)
+    for code in sorted(truth.codes()):
+        t_value = truth[code].value
+        e_value = extracted[code].value if extracted.get(code) is not None else None
+        difference, share = _gap(e_value, t_value)
+        result.fields.append(
+            {
+                "code": code,
+                "truth": str(t_value),
+                "extracted": str(e_value) if e_value is not None else None,
+                "difference": difference,
+                "relative": share,
+                "status": "MISSING" if e_value is None else "RIGHT" if code not in wrong else "WRONG",
+                "silent": code in silent,
+            }
+        )
+    for t in reference:
+        e = mine.get(t.code)
+        t_value, e_value = t.measured, (e.measured if e else None)
+        difference, share = _gap(e_value, t_value) if t.is_computed and e and e.is_computed else (None, None)
+        result.ratio_rows.append(
+            {
+                "code": t.code,
+                "name": t.name,
+                "unit": t.unit,
+                "truth": _ratio_row(t),
+                "extracted": _ratio_row(e) if e else None,
+                "difference": difference,
+                "relative": share,
+                "right": _ratio_agrees(e, t),
+                "items": list(t.items_used),
+                "caused_by": sorted(set(t.items_used) & wrong),
+            }
+        )
 
     # The other annotated lines: compared, reported, not measured.
     others = {c: v for c, v in annotation.amounts.items() if c not in JUDGED_CODES}

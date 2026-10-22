@@ -10,12 +10,16 @@ the routes: the last active supervisor cannot be demoted or deactivated,
 and nobody can deactivate themselves.
 
 Who manages whom:
-* a supervisor adds, edits, resets, deactivates and deletes ANALYSTS only;
-* supervisor accounts are created directly in the database
-  (``backend/create_supervisor.py``) with a temporary password, and each
-  supervisor then manages their own account (name, password) on My account.
-  No supervisor can create, change, deactivate or delete another one, and
-  nobody can change a role from the screens.
+* the ADMINISTRATOR adds, edits, resets, deactivates, reactivates and
+  deletes SUPERVISORS and ANALYSTS (Users page of the admin area);
+* a supervisor does the same for ANALYSTS only — never for another
+  supervisor, and never for an administrator;
+* administrator accounts are created directly in the database
+  (``backend/create_admin.py``); nobody manages an administrator from the
+  screens, and each administrator manages their own name and password on
+  My account (as every user does);
+* nobody can change a role from the screens: a role is chosen when the
+  account is created.
 """
 
 from __future__ import annotations
@@ -63,7 +67,7 @@ class UserService:
         )
         return user
 
-    # --- administration (supervisor only — checked by the caller) ----------
+    # --- administration (supervisor or administrator — checked by the caller)
     def create(
         self,
         username: str,
@@ -72,16 +76,26 @@ class UserService:
         password: str,
         author: str,
         allow_supervisor: bool = False,
+        allow_admin: bool = False,
     ) -> E.User:
-        """Add an account. From the Users page only an ANALYST; a supervisor
-        account is created by ``create_supervisor.py`` (allow_supervisor)."""
+        """Add an account.
+
+        * ANALYST: a supervisor or the administrator;
+        * SUPERVISOR: the administrator (``allow_supervisor``), or
+          ``create_supervisor.py``;
+        * ADMIN: only ``create_admin.py`` (``allow_admin``).
+        """
         role = (role or E.ROLE_ANALYST).upper()
         if role not in E.ROLES:
             raise ValueError(f"role must be one of {E.ROLES}")
+        if role == E.ROLE_ADMIN and not allow_admin:
+            raise E.DomainError(
+                "an administrator account cannot be created from the screens — "
+                "use backend/create_admin.py"
+            )
         if role == E.ROLE_SUPERVISOR and not allow_supervisor:
             raise E.DomainError(
-                "a supervisor cannot add another supervisor — supervisor accounts "
-                "are created directly in the database (backend/create_supervisor.py)"
+                "only the administrator can add a supervisor — a supervisor adds analysts"
             )
         username = (username or "").strip()
         full_name = " ".join((full_name or "").split())
@@ -125,12 +139,17 @@ class UserService:
         active: bool | None = None,
         password: str | None = None,
     ) -> E.User:
-        # A supervisor's account belongs to that supervisor: nobody else
-        # can rename it, reset its password or deactivate it.
-        if user.role == E.ROLE_SUPERVISOR and user.id != author.id:
+        # An administrator's account belongs to that administrator alone.
+        if user.is_admin and user.id != author.id:
+            raise E.DomainError(
+                "an administrator account is managed by its owner (My account) "
+                "or with backend/create_admin.py"
+            )
+        # A supervisor's account: that supervisor, or the administrator.
+        if user.is_supervisor and user.id != author.id and not author.is_admin:
             raise E.DomainError(
                 "a supervisor cannot change another supervisor's account — "
-                "each supervisor manages their own account on My account"
+                "only the administrator can"
             )
         # Roles are fixed where the account was created (Users page: analyst;
         # database: supervisor). Sending the current role is not a change.
@@ -191,17 +210,39 @@ class UserService:
         return user
 
     def delete(self, user: E.User, author: E.User) -> None:
-        """Remove an analyst's account for good.
+        """Remove an account for good.
 
-        Only an analyst, never yourself, and only while no case carries
-        their name: a case must keep a real owner. An analyst who already
-        has cases is deactivated instead (they can no longer sign in, and
-        every record they signed stays readable).
+        * Never yourself, and never an administrator.
+        * An analyst (supervisor or administrator), only while no case
+          carries their name: a case must keep a real owner. An analyst who
+          already has cases is deactivated instead (they can no longer sign
+          in, and every record they signed stays readable).
+        * A supervisor (administrator only), never the last active one.
+          Their name stays on every validation they signed; the cases
+          assigned to them, or validated by them, open up to the other
+          supervisors, exactly as when a supervisor is deactivated.
         """
-        if user.role != E.ROLE_ANALYST:
-            raise E.DomainError("only an analyst's account can be deleted")
         if user.id == author.id:
             raise E.DomainError("you cannot delete your own account")
+        if user.is_admin:
+            raise E.DomainError("an administrator account cannot be deleted from the screens")
+        if user.is_supervisor:
+            if not author.is_admin:
+                raise E.DomainError("only the administrator can delete a supervisor")
+            if user.active:
+                self._keep_one_supervisor(user)
+            self.users.delete(user.id)
+            self.audit.record(
+                E.AuditEntry(
+                    entity="User",
+                    entity_id=user.id,
+                    action="USER_DELETED",
+                    author=author.full_name,
+                    detail={"username": user.username, "full_name": user.full_name,
+                            "role": user.role},
+                )
+            )
+            return
         owned = [
             case for case in (self.cases.list() if self.cases else [])
             if case.analyst and case.analyst.strip().casefold() == user.full_name.casefold()
@@ -218,7 +259,8 @@ class UserService:
                 entity_id=user.id,
                 action="USER_DELETED",
                 author=author.full_name,
-                detail={"username": user.username, "full_name": user.full_name},
+                detail={"username": user.username, "full_name": user.full_name,
+                        "role": user.role},
             )
         )
 

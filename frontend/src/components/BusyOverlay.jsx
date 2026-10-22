@@ -29,6 +29,10 @@ const TEXTS = {
     analysis: 'Analysis in progress',
     analysisHint:
       'The ratios are computed and Claude is writing the AI commentary. This can take a minute or two.',
+    campaign: 'Campaign in progress',
+    campaignHint:
+      'Every package of the corpus is extracted and compared with its hand reading. ' +
+      'Count a few seconds per typed document, more for scanned pages.',
     keepOpen: 'Keep this page open. It will continue by itself when the work is done.',
     elapsed: 'Elapsed',
     limit: 'time limit',
@@ -45,6 +49,10 @@ const TEXTS = {
     analysis: 'Analyse en cours',
     analysisHint:
       "Les ratios sont calculés et Claude rédige le commentaire IA. Cela peut prendre une ou deux minutes.",
+    campaign: 'Campagne en cours',
+    campaignHint:
+      'Chaque dossier du corpus est extrait et comparé à sa lecture manuelle. ' +
+      'Comptez quelques secondes par document texte, davantage pour des pages scannées.',
     keepOpen: 'Gardez cette page ouverte. Elle continuera toute seule une fois le travail terminé.',
     elapsed: 'Temps écoulé',
     limit: 'limite',
@@ -128,7 +136,7 @@ export default function BusyOverlay() {
   const limit = TIME_LIMITS_MS[task.kind] || 5 * 60 * 1000
   const spent = now - task.startedAt
   const share = Math.min(100, (spent / limit) * 100)
-  const isExtraction = task.kind === 'extraction'
+  const kind = text[task.kind] ? task.kind : 'analysis'
 
   return (
     <div className="busy-scrim" role="alertdialog" aria-modal="true" aria-busy="true" aria-live="polite">
@@ -137,8 +145,8 @@ export default function BusyOverlay() {
           <span className="busy-ring" aria-hidden="true" />
           <BrandSymbol />
         </div>
-        <h2>{isExtraction ? text.extraction : text.analysis}</h2>
-        <p className="muted">{isExtraction ? text.extractionHint : text.analysisHint}</p>
+        <h2>{text[kind]}</h2>
+        <p className="muted">{text[`${kind}Hint`]}</p>
         <div
           className={`busy-timeline${share > 80 ? ' late' : ''}`}
           role="progressbar"
