@@ -114,8 +114,13 @@ computed result.
 - **Badly scanned PDFs.** On `ETAT_FINANCIER_TEST2.pdf` the OCR word
   positions are too scrambled (skew, resolution) for any column to survive,
   so the rule-based structurer finds nothing. The analyst can key the items
-  in by hand (`AddItemForm`), and these are the documents where the
-  language-model structurer is meant to earn its place.
+  in by hand (`AddItemForm`), or, since 27 October 2026, press **Read with
+  AI**: `infra/llm/claude_vision.py` bypasses this pipeline entirely, renders
+  each page as an image (PyMuPDF, long side 1568 px, at most
+  `VISION_MAX_PAGES` pages) and has Claude read the items off the images
+  (prompt `vision_v1.md`, engine `LLM_VISION`). The result is reviewed and
+  validated like any other run. These are the documents where the language
+  model is meant to earn its place, and a good place to measure it.
 
 ## Output format of `test_loader.py`
 

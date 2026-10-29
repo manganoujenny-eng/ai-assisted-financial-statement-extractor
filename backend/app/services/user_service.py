@@ -10,14 +10,19 @@ the routes: the last active supervisor cannot be demoted or deactivated,
 and nobody can deactivate themselves.
 
 Who manages whom:
+* the SUPER ADMINISTRATOR (exactly one, created once with
+  ``backend/create_superadmin.py``) adds, edits, resets, deactivates,
+  reactivates and deletes ADMINISTRATORS, and does everything an
+  administrator does; nobody manages the super administrator from the
+  screens;
 * the ADMINISTRATOR adds, edits, resets, deactivates, reactivates and
   deletes SUPERVISORS and ANALYSTS (Users page of the admin area);
 * a supervisor does the same for ANALYSTS only — never for another
   supervisor, and never for an administrator;
-* administrator accounts are created directly in the database
-  (``backend/create_admin.py``); nobody manages an administrator from the
-  screens, and each administrator manages their own name and password on
-  My account (as every user does);
+* an administrator never manages another administrator; administrator
+  accounts are created by the super administrator (or with
+  ``backend/create_admin.py``), and each administrator manages their own
+  name and password on My account (as every user does);
 * nobody can change a role from the screens: a role is chosen when the
   account is created.
 """
@@ -39,11 +44,21 @@ class AuthenticationFailed(Exception):
 
 class UserService:
     def __init__(
-        self, users: UserRepository, audit: AuditLog, cases: CaseRepository | None = None
+        self, users: UserRepository, audit: AuditLog, cases: CaseRepository | None = None,
+        archive=None,
     ) -> None:
         self.users = users
         self.audit = audit
         self.cases = cases
+        #: ArchiveService: a deleted account is kept there, so the
+        #: administrator can restore it (None: no archive, e.g. the scripts).
+        self.archive = archive
+
+    def _remove(self, user: E.User, author: E.User) -> None:
+        """Delete the account — after keeping a copy in the archive."""
+        if self.archive is not None:
+            self.archive.keep_user(user, author.full_name)
+        self.users.delete(user.id)
 
     # --- signing in -------------------------------------------------------
     def authenticate(self, username: str, password: str) -> E.User:
@@ -77,21 +92,31 @@ class UserService:
         author: str,
         allow_supervisor: bool = False,
         allow_admin: bool = False,
+        allow_superadmin: bool = False,
     ) -> E.User:
         """Add an account.
 
-        * ANALYST: a supervisor or the administrator;
-        * SUPERVISOR: the administrator (``allow_supervisor``), or
-          ``create_supervisor.py``;
-        * ADMIN: only ``create_admin.py`` (``allow_admin``).
+        * ANALYST: a supervisor or an administrator;
+        * SUPERVISOR: an administrator (``allow_supervisor``);
+        * ADMIN: the super administrator, or ``create_admin.py``
+          (``allow_admin``);
+        * SUPERADMIN: only ``create_superadmin.py`` (``allow_superadmin``),
+          and only while there is none.
         """
         role = (role or E.ROLE_ANALYST).upper()
         if role not in E.ROLES:
             raise ValueError(f"role must be one of {E.ROLES}")
+        if role == E.ROLE_SUPERADMIN:
+            if not allow_superadmin:
+                raise E.DomainError(
+                    "the super administrator cannot be created from the screens — "
+                    "use backend/create_superadmin.py"
+                )
+            if any(u.is_superadmin for u in self.users.list()):
+                raise E.DomainError("a super administrator already exists — there is only one")
         if role == E.ROLE_ADMIN and not allow_admin:
             raise E.DomainError(
-                "an administrator account cannot be created from the screens — "
-                "use backend/create_admin.py"
+                "only the super administrator can add an administrator"
             )
         if role == E.ROLE_SUPERVISOR and not allow_supervisor:
             raise E.DomainError(
@@ -139,11 +164,18 @@ class UserService:
         active: bool | None = None,
         password: str | None = None,
     ) -> E.User:
-        # An administrator's account belongs to that administrator alone.
-        if user.is_admin and user.id != author.id:
+        # The super administrator's account belongs to them alone.
+        if user.is_superadmin and user.id != author.id:
+            raise E.DomainError(
+                "the super administrator's account is managed by its owner (My account) "
+                "or with backend/create_superadmin.py"
+            )
+        # An administrator's account: that administrator, or the super
+        # administrator.
+        if user.is_admin and user.id != author.id and not author.is_superadmin:
             raise E.DomainError(
                 "an administrator account is managed by its owner (My account) "
-                "or with backend/create_admin.py"
+                "or by the super administrator"
             )
         # A supervisor's account: that supervisor, or the administrator.
         if user.is_supervisor and user.id != author.id and not author.is_admin:
@@ -212,7 +244,8 @@ class UserService:
     def delete(self, user: E.User, author: E.User) -> None:
         """Remove an account for good.
 
-        * Never yourself, and never an administrator.
+        * Never yourself, never the super administrator.
+        * An administrator: the super administrator only.
         * An analyst (supervisor or administrator), only while no case
           carries their name: a case must keep a real owner. An analyst who
           already has cases is deactivated instead (they can no longer sign
@@ -224,14 +257,29 @@ class UserService:
         """
         if user.id == author.id:
             raise E.DomainError("you cannot delete your own account")
+        if user.is_superadmin:
+            raise E.DomainError("the super administrator's account cannot be deleted from the screens")
         if user.is_admin:
-            raise E.DomainError("an administrator account cannot be deleted from the screens")
+            if not author.is_superadmin:
+                raise E.DomainError("only the super administrator can delete an administrator")
+            self._remove(user, author)
+            self.audit.record(
+                E.AuditEntry(
+                    entity="User",
+                    entity_id=user.id,
+                    action="USER_DELETED",
+                    author=author.full_name,
+                    detail={"username": user.username, "full_name": user.full_name,
+                            "role": user.role},
+                )
+            )
+            return
         if user.is_supervisor:
             if not author.is_admin:
                 raise E.DomainError("only the administrator can delete a supervisor")
             if user.active:
                 self._keep_one_supervisor(user)
-            self.users.delete(user.id)
+            self._remove(user, author)
             self.audit.record(
                 E.AuditEntry(
                     entity="User",
@@ -252,7 +300,7 @@ class UserService:
                 f"{user.full_name} owns {len(owned)} case(s) — deactivate the account "
                 "instead, so the cases keep their analyst"
             )
-        self.users.delete(user.id)
+        self._remove(user, author)
         self.audit.record(
             E.AuditEntry(
                 entity="User",

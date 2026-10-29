@@ -102,7 +102,7 @@ class ExtractionService:
 
     # --- UC-03 ----------------------------------------------------------
     def run_extraction(
-        self, case: E.AnalysisCase, author: str = "system"
+        self, case: E.AnalysisCase, author: str = "system", vision=None
     ) -> E.ExtractionRun:
         """Extract every document currently attached to the case, together.
 
@@ -114,6 +114,11 @@ class ExtractionService:
         deleting a wrong document and attaching the right one, say) always
         starts a brand-new run over whatever the case's documents are at
         that moment — the old run is kept, never edited, same as before.
+
+        ``vision`` ("Read with AI"): the case's PDFs are read by the model
+        from images of their pages (``ClaudeVisionStructurer``), for scans
+        the OCR could not read. Excel files keep the normal path. The run is
+        an ordinary run (engine LLM_VISION), kept next to the others.
         """
         if not case.documents:
             raise ExtractionFailed("the case has no documents to extract")
@@ -121,7 +126,7 @@ class ExtractionService:
         case.transition_to(E.EXTRACTING)
         run = E.ExtractionRun(
             case_id=case.id,
-            engine=self.structurer.engine,
+            engine=(vision or self.structurer).engine,
             status=E.EXTRACTING,
             document_ids=[d.id for d in case.documents],
         )
@@ -141,20 +146,24 @@ class ExtractionService:
             seen_by: dict[tuple[str, str], str] = {}
 
             for document in case.documents:
-                # 1-2. detect the type, extract text and tables (the reader
-                #      decides internally whether OCR is needed — A1).
-                reader = self._reader_for(document.stored_path or document.file_name)
-                raw = reader.read(document.stored_path or document.file_name)
-                document.page_count = raw.page_count
-                document.is_scanned = raw.ocr_used
-                # Without this, page_count/is_scanned are set on this
-                # in-memory object and never written back — every document,
-                # including ones that extract successfully, reports
-                # page_count=null and is_scanned=null forever.
-                self.documents.save(document)
+                if vision is not None and document.doc_type == "PDF":
+                    # "Read with AI": the model reads the page images.
+                    structured = vision.structure_file(document.stored_path or document.file_name)
+                else:
+                    # 1-2. detect the type, extract text and tables (the reader
+                    #      decides internally whether OCR is needed — A1).
+                    reader = self._reader_for(document.stored_path or document.file_name)
+                    raw = reader.read(document.stored_path or document.file_name)
+                    document.page_count = raw.page_count
+                    document.is_scanned = raw.ocr_used
+                    # Without this, page_count/is_scanned are set on this
+                    # in-memory object and never written back — every document,
+                    # including ones that extract successfully, reports
+                    # page_count=null and is_scanned=null forever.
+                    self.documents.save(document)
 
-                # 3. submit to the structurer (LLM or rule-based: same port).
-                structured = self.structurer.structure(raw)
+                    # 3. submit to the structurer (LLM or rule-based: same port).
+                    structured = self.structurer.structure(raw)
                 run.model = run.model or structured.model
                 run.prompt_version = run.prompt_version or structured.prompt_version
                 if structured.cost_usd is not None:

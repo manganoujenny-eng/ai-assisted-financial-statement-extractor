@@ -83,6 +83,23 @@ function CaseCard({ analysisCase, showAnalyst = false }) {
         </div>
       </div>
 
+      {analysisCase.discussion?.messages > 0 && (
+        <Link
+          className={`mycase-discussion${analysisCase.discussion.unread > 0 ? ' unread' : ''}`}
+          to={
+            run && run.status !== 'EXTRACTION_FAILED'
+              ? `/cases/${analysisCase.id}/review/${run.id}#discussion`
+              : `/cases/${analysisCase.id}/dashboard#discussion`
+          }
+        >
+          <span aria-hidden="true">💬</span>{' '}
+          {analysisCase.discussion.unread > 0
+            ? t('myCases.discussionUnread', { count: analysisCase.discussion.unread })
+            : t('myCases.discussion', { count: analysisCase.discussion.messages })}
+          <span className="mycase-discussion-open">{t('myCases.discussionOpen')} →</span>
+        </Link>
+      )}
+
       {run?.status === 'EXTRACTION_FAILED' && (
         <div className="banner fail" style={{ marginTop: 12 }}>
           {t('myCases.extractionFailed', { reason: run.failure_reason || t('myCases.noReason') })}

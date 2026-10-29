@@ -2753,10 +2753,13 @@ button.danger:hover { background: #991b1b; border-color: #991b1b; color: #fff; }
   .user-chip strong { max-width: 90px; }
 }
 .dt-head .adm-table-name { display: inline; }
-@media (max-width: 1300px) {
-  .app-header.wide-nav .user-chip strong { display: none; }
+/* The administrator's header has six menus (with the Archive): the name
+   hides earlier, and the menu folds into the button earlier. */
+@media (max-width: 1680px) {
+  .app-header.wide-nav .user-chip strong,
+  .app-header.wide-nav .user-chip .pill { display: none; }
 }
-@media (max-width: 1200px) {
+@media (max-width: 1280px) {
   .app-header.wide-nav .app-header-inner { flex-wrap: wrap; gap: 10px 16px; padding: 10px 16px; }
   .app-header.wide-nav .nav-toggle { display: inline-flex; margin-left: auto; padding: 7px 11px; }
   .app-header.wide-nav .app-nav,
@@ -2766,6 +2769,7 @@ button.danger:hover { background: #991b1b; border-color: #991b1b; color: #fff; }
   .app-header.wide-nav .app-nav a.active { background: var(--brand-soft); }
   .app-header.wide-nav .app-nav a.active::after { display: none; }
   .app-header.wide-nav .user-chip strong { display: inline; }
+  .app-header.wide-nav .user-chip .pill { display: inline-flex; }
 }
 .ov-pair {
   display: grid;
@@ -2986,3 +2990,141 @@ button.danger:hover { background: #991b1b; border-color: #991b1b; color: #fff; }
 
 /* campaign detail: Delete and Close side by side */
 .cd-head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ============================================================
+   ARCHIVE (Administration → Archive)
+   ============================================================ */
+.arc-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.arc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.arc-chips button { padding: 6px 12px; border-radius: 999px; font-size: 13px; }
+.arc-chips button.selected { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-deep); }
+.arc-chips .num { margin-left: 4px; color: var(--ink-faint); }
+.arc-chips button.selected .num { color: var(--brand-deep); }
+.arc-kind { margin-right: 8px; }
+.arc-label { font-weight: 500; }
+.arc-detail { display: block; font-size: 12.5px; margin-top: 2px; }
+.arc-actions { white-space: nowrap; text-align: right; }
+.arc-actions button + button { margin-left: 6px; }
+@media (max-width: 760px) {
+  .arc-actions { white-space: normal; text-align: left; }
+  .arc-actions button { margin: 4px 6px 0 0; }
+  .arc-actions button + button { margin-left: 0; }
+}
+
+/* Dashboard export: PDF report or Excel spreadsheet */
+.dashboard-export-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ============================================================
+   DISCUSSION BETWEEN SUPERVISORS (components/CaseDiscussion.jsx)
+   ============================================================ */
+.discussion-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.discussion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.discussion-empty { margin: 0; text-align: center; }
+.discussion-message {
+  max-width: 78%;
+  align-self: flex-start;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px 10px 10px 2px;
+}
+.discussion-message.mine { align-self: flex-end; background: var(--brand-soft); border-color: transparent; border-radius: 10px 10px 2px 10px; }
+.discussion-message p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.discussion-message { position: relative; }
+.discussion-message.deleted { background: transparent; border: 1px dashed var(--line); }
+.discussion-deleted { font-style: italic; color: var(--ink-faint); }
+.discussion-empty-note {
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+  background: var(--surface-sunken);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+}
+/* Copy / Edit / Delete: shown on hover or keyboard focus; on a touch
+   screen, behind the ⋯ button. */
+.discussion-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.discussion-message:hover .discussion-actions,
+.discussion-message:focus-within .discussion-actions,
+.discussion-message.menu-open .discussion-actions { max-height: 60px; opacity: 1; }
+.discussion-actions button {
+  padding: 2px 8px;
+  font-size: 12px;
+  min-height: 0;
+  line-height: 1.6;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.discussion-actions .discussion-delete { color: var(--danger); }
+.discussion-more {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 0 6px;
+  min-height: 0;
+  line-height: 1.3;
+  font-size: 15px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-faint);
+}
+@media (hover: none) {
+  .discussion-more { display: block; }
+  .discussion-meta { padding-right: 24px; }
+}
+.discussion-edit textarea { width: 100%; margin-top: 6px; font: inherit; resize: vertical; }
+.discussion-edit-buttons, .discussion-confirm { display: flex; gap: 6px; justify-content: flex-end; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+.discussion-confirm span { margin-right: auto; }
+.discussion-typing { min-height: 20px; margin: 8px 2px 0; font-size: 12.5px; font-style: italic; color: var(--ink-soft); }
+.typing-dots { display: inline-flex; gap: 3px; vertical-align: middle; }
+.typing-dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: typing-dot 1.2s infinite ease-in-out; }
+.typing-dots i:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+/* My cases: the discussion of a case, with its unread messages */
+.mycase-discussion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: inherit;
+  text-decoration: none;
+  font-size: 13.5px;
+}
+.mycase-discussion.unread { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.mycase-discussion-open { margin-left: auto; color: var(--brand); font-weight: 600; }
+.discussion-meta { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12.5px; }
+.discussion-form { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+.discussion-form textarea { flex: 1; min-width: 0; resize: vertical; font: inherit; }
+.discussion-hint { margin: 6px 0 0; font-size: 12px; }
+@media (max-width: 760px) {
+  .discussion-message { max-width: 92%; }
+  .discussion-form { flex-direction: column; align-items: stretch; }
+}

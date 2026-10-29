@@ -17,7 +17,7 @@ const EMPTY = { q: '', author: '', action: '', entity: '', from: '', to: '' }
 const PER_PAGE = 50
 // The "Who acted" list, grouped: the accounts by role, then the authors
 // that are not a current account (scripts, the application, typed usernames).
-const KINDS = ['ADMIN', 'SUPERVISOR', 'ANALYST', 'SCRIPT', 'SYSTEM', 'OTHER']
+const KINDS = ['SUPERADMIN', 'ADMIN', 'SUPERVISOR', 'ANALYST', 'SCRIPT', 'SYSTEM', 'OTHER']
 
 export default function AdminAuditPage() {
   const [filters, setFilters] = useState(EMPTY)

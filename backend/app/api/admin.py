@@ -11,6 +11,10 @@ the screens:
 * ``POST /api/admin/corpus/<p>/files``    add documents / the annotation
 * ``DELETE /api/admin/corpus/<p>/files/<f>``  remove one file
 * ``DELETE /api/admin/corpus/<p>``        remove an EMPTY package folder
+* ``DELETE /api/admin/campaigns/<id>``    delete a stored campaign
+* ``GET  /api/admin/archive``             everything deleted, kept
+* ``POST /api/admin/archive/<id>/restore``  put it back exactly as it was
+* ``DELETE /api/admin/archive/<id>``      delete it for good
 * ``GET  /api/admin/tables``              the database tables (read-only)
 * ``GET  /api/admin/tables/<name>``       the rows of one table (read-only)
 
@@ -427,7 +431,8 @@ def delete_corpus_file(package: str, file_name: str):
     target = (folder / file_name).resolve()
     if target.parent != folder or not target.is_file():
         raise NotFound(f"no file {file_name} in {package}")
-    target.unlink()
+    # Moved to the archive, not erased: the administrator can restore it.
+    container().archive_service.keep_corpus_file(folder, target.name, actor(default="administrator"))
     _audit_corpus("CORPUS_FILE_DELETED", package, file_name)
     return jsonify(_package_json(folder))
 
@@ -439,6 +444,7 @@ def delete_package(package: str):
     folder = _package_dir(package)
     if any(folder.iterdir()):
         raise Conflict(f"{package} still has files — delete them first")
+    container().archive_service.keep_corpus_package(folder, actor(default="administrator"))
     folder.rmdir()
     _audit_corpus("CORPUS_PACKAGE_DELETED", package)
     return "", 204
@@ -506,7 +512,11 @@ def _audit_corpus(action: str, package: str, file_name: str | None = None) -> No
 # Database browser (read-only)
 # ==========================================================================
 #: Never shown, even to the administrator.
-HIDDEN_COLUMNS = {"app_user": {"password_hash"}}
+HIDDEN_COLUMNS = {
+    "app_user": {"password_hash"},
+    # The complete copy of a deletion: a deleted account's holds its hash.
+    "archive_entry": {"payload"},
+}
 
 
 def _tables():
@@ -536,6 +546,7 @@ def delete_campaign(campaign_id: str):
     if campaign is None:
         raise NotFound(f"no campaign {campaign_id}")
     s = campaign.summary or {}
+    archived = c.archive_service.keep_campaign(campaign, actor(default="administrator"))
     c.evaluations.delete(campaign_id)
     c.audit.record(
         E.AuditEntry(
@@ -549,9 +560,67 @@ def delete_campaign(campaign_id: str):
                 "note": campaign.note,
                 "field_accuracy": s.get("field_accuracy"),
                 "ratio_accuracy": s.get("ratio_accuracy"),
+                "archive_id": archived.id,
             },
         )
     )
+    return "", 204
+
+
+# --- the archive ----------------------------------------------------------
+def _archive_json(entry: E.ArchiveEntry) -> dict:
+    # Never the payload: a deleted account's copy holds its password hash.
+    return {
+        "id": entry.id,
+        "kind": entry.kind,
+        "entity_id": entry.entity_id,
+        "label": entry.label,
+        "detail": entry.detail,
+        "deleted_by": entry.deleted_by,
+        "deleted_at": entry.deleted_at.isoformat() if entry.deleted_at else None,
+    }
+
+
+@admin_bp.get("/archive")
+def archive():
+    """Everything deleted and kept, newest first. ``kind`` filters (CASE,
+    DOCUMENT, USER, CORPUS_FILE, CORPUS_PACKAGE, CAMPAIGN); ``q`` searches
+    the label and who deleted it."""
+    c = container()
+    kind = (request.args.get("kind") or "").strip().upper() or None
+    if kind and kind not in E.ARCHIVE_KINDS:
+        raise ValueError(f"kind must be one of {E.ARCHIVE_KINDS}")
+    q = (request.args.get("q") or "").strip().casefold()
+    entries = [
+        e for e in c.archive.list(kind)
+        if not q or q in e.label.casefold() or q in (e.deleted_by or "").casefold()
+    ]
+    counts = Counter(e.kind for e in c.archive.list())
+    return jsonify({"entries": [_archive_json(e) for e in entries], "counts": dict(counts)})
+
+
+def _archived(entry_id: str) -> E.ArchiveEntry:
+    entry = container().archive.get(entry_id)
+    if entry is None:
+        raise NotFound(f"no archive entry {entry_id}")
+    return entry
+
+
+@admin_bp.post("/archive/<entry_id>/restore")
+def restore_archived(entry_id: str):
+    """Put it back exactly as it was (same identifiers). Refused (409),
+    with the reason, when it would clash with what exists now."""
+    entry = _archived(entry_id)
+    container().archive_service.restore(entry, actor(default="administrator"),
+                                        corpus_dir=_corpus_root())
+    return jsonify({"restored": entry.kind, "entity_id": entry.entity_id, "label": entry.label})
+
+
+@admin_bp.delete("/archive/<entry_id>")
+def purge_archived(entry_id: str):
+    """Delete for good: the copy, and the files only it still held."""
+    entry = _archived(entry_id)
+    container().archive_service.purge(entry, actor(default="administrator"))
     return "", 204
 
 @admin_bp.get("/tables")

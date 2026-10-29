@@ -158,7 +158,7 @@ class TestCampaign:
         assert entity.packages[0]["silent_false_positives"] == ["XB"]
 
     # --- the details a failed campaign needs ---------------------------------
-    def test_every_item_and_ratio_is_reported_with_its_gap(tmp_path):
+    def test_every_item_and_ratio_is_reported_with_its_gap(self, tmp_path):
         package(tmp_path, "RP001", BALANCED)
         read = dict(BALANCED, XB=22_000_000)  # +10 %
         p = run_campaign(tmp_path, extractor({"RP001": read})).packages[0]
@@ -174,7 +174,7 @@ class TestCampaign:
         assert all(r["right"] for r in p.ratio_rows if r["code"] != "R4")
         assert {c["code"] for c in p.checks} >= {"CHK001", "CHK002"}
 
-    def test_a_rejected_reference_says_which_check_fails(tmp_path):
+    def test_a_rejected_reference_says_which_check_fails(self, tmp_path):
         package(tmp_path, "RP001", dict(BALANCED, AZ=5_699_223_032))
         p = run_campaign(tmp_path, extractor({"RP001": BALANCED})).packages[0]
         failing = [c for c in p.reference_checks if c["blocking"]]

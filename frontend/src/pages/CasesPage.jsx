@@ -74,6 +74,10 @@ export default function CasesPage() {
   // Upload limit announced by the backend (GET /api/health), so an
   // oversized file is refused here instead of after minutes of uploading.
   const [maxUploadMb, setMaxUploadMb] = useState(null)
+  // "Read with AI" is offered only when the backend has the model.
+  const [visionAvailable, setVisionAvailable] = useState(false)
+  // The case waiting for the "send the pages to the AI?" confirmation.
+  const [pendingVision, setPendingVision] = useState(null)
 
   // { fileName, index, total, percent } while a file is uploading.
   const [uploadProgress, setUploadProgress] = useState(null)
@@ -94,7 +98,10 @@ export default function CasesPage() {
     reload()
     api
       .getHealth()
-      .then((health) => setMaxUploadMb(health.max_upload_mb ?? null))
+      .then((health) => {
+        setMaxUploadMb(health.max_upload_mb ?? null)
+        setVisionAvailable(Boolean(health.vision))
+      })
       .catch(() => setMaxUploadMb(null))
   }, [])
 
@@ -130,7 +137,7 @@ export default function CasesPage() {
     }
   }
 
-  async function onRunExtraction(analysisCase) {
+  async function onRunExtraction(analysisCase, engine) {
     /*
      * Case-level, not document-level: this reads every document currently
      * attached to the case and merges their fields into one run (see the
@@ -142,10 +149,14 @@ export default function CasesPage() {
      */
     setBusy(true)
     setError(null)
-    setMessage(t('cases.extracting', { count: analysisCase.documents.length }))
+    setMessage(
+      engine === 'vision'
+        ? t('vision.reading')
+        : t('cases.extracting', { count: analysisCase.documents.length })
+    )
 
     try {
-      const run = await api.runExtraction(analysisCase.id)
+      const run = await api.runExtraction(analysisCase.id, engine)
       navigate(`/cases/${analysisCase.id}/review/${run.id}`)
     } catch (err) {
       setError(err.message)
@@ -367,6 +378,25 @@ export default function CasesPage() {
             </div>
           )}
         </div>
+      )}
+
+      {pendingVision && (
+        <DangerDialog
+          title={t('vision.confirmTitle', { client: pendingVision.client })}
+          confirmLabel={t('vision.confirm')}
+          workingLabel={t('vision.reading')}
+          working={busy}
+          onConfirm={() => {
+            const target = pendingVision
+            setPendingVision(null)
+            onRunExtraction(target, 'vision')
+          }}
+          onCancel={() => setPendingVision(null)}
+        >
+          <p>{t('vision.confirmBody')}</p>
+          <p><strong>{t('vision.confirmPrivacy')}</strong></p>
+          <p className="muted">{t('vision.confirmCost')}</p>
+        </DangerDialog>
       )}
 
       {pendingDelete && (
@@ -666,6 +696,21 @@ export default function CasesPage() {
                                   onClick={() => onRunExtraction(analysisCase)}
                                 >
                                    {t('cases.retry')}
+                                </button>
+                            )}
+
+                            {/* "READ WITH AI": the model reads the PDF page
+                                images — for scans the OCR could not read.
+                                Asks first: the images leave the machine. */}
+                            {preparable && visionAvailable &&
+                              analysisCase.documents.some((d) => d.doc_type === 'PDF') && (
+                                <button
+                                  className={latestExtraction?.status === 'EXTRACTION_FAILED' ? 'danger' : ''}
+                                  disabled={busy}
+                                  title={t('vision.buttonHint')}
+                                  onClick={() => setPendingVision(analysisCase)}
+                                >
+                                  {t('vision.button')}
                                 </button>
                             )}
 

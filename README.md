@@ -25,7 +25,10 @@ v2.0* (cited in the code as "the dossier", with its section numbers).
    is fingerprinted (SHA-256) so the same bytes are never processed twice.
 3. **Extract**: the rule-based structurer (default, free, deterministic)
    reads the tables. Scanned pages go through OCR (Tesseract). A
-   language-model structurer (Claude) can be switched on instead.
+   language-model structurer (Claude) can be switched on instead. When a
+   scan is too poor for the OCR, the analyst can press **Read with AI**:
+   the model reads the PDF page images directly (after a confirmation,
+   since the images leave the machine — NFR-04).
 4. **Review and correct**: the source document on the left, the extracted
    items on the right. Every correction keeps the original proposal. An item
    the extractor missed can be keyed in by hand. The five consistency
@@ -40,10 +43,13 @@ v2.0* (cited in the code as "the dossier", with its section numbers).
 8. **AI commentary** (optional): right after validation, a model writes a
    commentary on the validated figures, in the screen's language. It stays
    a draft until an analyst approves it.
-9. **Export** the analysis as an Excel workbook.
+9. **Export** the analysis as an **Excel** workbook or a **PDF** report
+   (in the screen's language).
 
 Every step is written to an append-only **audit log** (who, what, when, on
-what).
+what). Nothing is lost on a delete: every deleted case, document, account,
+campaign or corpus file goes to the **Archive**, where an administrator can
+restore it (same ids) or purge it for good.
 
 ---
 
@@ -51,13 +57,22 @@ what).
 
 | Role | What they do | Where |
 |---|---|---|
-| **Analyst** | Creates their cases, uploads, extracts, corrects, keys missing items, submits to a supervisor, approves the AI commentary, exports | Cases, My cases, Review, Dashboard |
-| **Supervisor** | Validates the cases submitted to them, or sends them back; sees every analyst's work and statistics; manages analyst accounts; deletes finished (analysed) cases | Supervisor dashboard, My cases, Users |
-| **Administrator** | Runs the system without preparing or validating any case: manages supervisor and analyst accounts, reads the audit log (filters, CSV), browses the database read-only, manages the evaluation corpus, runs and deletes evaluation campaigns | Administration: Overview, Users, Audit log, Campaigns, Data |
+| **Analyst** | Creates their cases, uploads, extracts (or **Read with AI**), corrects, keys missing items, submits to a supervisor, approves the AI commentary, exports | Cases, My cases, Review, Dashboard |
+| **Supervisor** | Validates the cases submitted to them, or sends them back; sees every analyst's work and statistics; **discusses any case with the other supervisors** (one thread per case); manages analyst accounts; deletes finished (analysed) cases | Supervisor dashboard, My cases, Users |
+| **Administrator** | Runs the system without preparing or validating any case: manages supervisor and analyst accounts, reads the audit log (filters, CSV), browses the database read-only, manages the evaluation corpus, runs and deletes evaluation campaigns, **restores or purges the Archive** | Administration: Overview, Users, Audit log, Campaigns, Archive, Data |
+| **Super administrator** | Exactly one. Everything an administrator does, **plus** managing the administrator accounts from the Users page | The same pages |
 
-Administrator accounts are managed only with `backend/create_admin.py`,
-never from the screens. Every user changes their own name and password on
-**My account**.
+**Only the person a case is assigned to acts on it.** The analyst who owns
+the case prepares it (extract, correct, submit, redraft and approve the AI
+commentary); the supervisor it was submitted to validates it or sends it
+back. Other supervisors can read it and give their
+opinion in the case's **discussion** (a bell announces new messages), but
+every action button is refused to them (HTTP 403).
+
+The super administrator is created once with `backend/create_superadmin.py`,
+never from the screens; nobody can change or delete it from the screens.
+`backend/create_admin.py` still works as a fallback for administrators.
+Every user changes their own name and password on **My account**.
 
 The interface is in **English and French** (switch in the header). The
 choice is remembered in the browser and also sets the language of the AI
@@ -81,9 +96,10 @@ copy .env.example .env
 #    For accounts to persist, set STORAGE=sql. Without DATABASE_URL the
 #    data goes to data/prototype.db (SQLite); with it, to PostgreSQL.
 
-# 3. The first administrator (one time)
+# 3. The super administrator (one time)
 cd backend
-python create_admin.py          # prints a temporary password if you press Enter
+python create_superadmin.py     # prints a temporary password if you press Enter
+#    lost password: python create_superadmin.py --reset
 
 # 4. The backend
 python wsgi.py                  # http://127.0.0.1:5000/api/health
@@ -96,12 +112,13 @@ npm install
 npm run dev                     # http://localhost:5173
 ```
 
-Sign in as the administrator, change the temporary password on **My
-account**, then create the supervisors and analysts on **Users**.
+Sign in as the super administrator, change the temporary password on **My
+account**, then create the administrators, supervisors and analysts on
+**Users**.
 
 ```powershell
 # 6. The tests, from the project folder
-pytest                          # 237 passed
+pytest                          # 278 passed
 ```
 
 > Start the backend from inside `backend/`: the `document_processing`
@@ -127,9 +144,11 @@ lists every variable.
 | `INPUT_USD_PER_MTOK`, `OUTPUT_USD_PER_MTOK` | `4.00`, `20.00` | Prices used for the cost cap (and `ANALYSIS_…` variants) |
 | `LLM_EFFORT` | `medium` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `MAX_COST_USD` | `5.00` | Hard cap on model spending since the backend started (NFR-08); restart to reset |
+| `VISION_MAX_PAGES` | `12` | **Read with AI**: at most this many PDF pages are sent to the model as images |
 | `UPLOAD_DIR` | `<project>/data/uploads` | Where uploaded files are stored |
 | `MAX_UPLOAD_MB` | `300` | Largest accepted upload |
 | `CORPUS_DIR` | `<project>/data/corpus` | The evaluation corpus |
+| `ARCHIVE_DIR` | `<project>/data/archive` | Where archived corpus files are moved until restored or purged |
 | `LLM_CACHE_DIR` | `<project>/data/llm_cache` | Cached model answers (never pay twice) |
 | `OCR_WORKERS` | CPU count − 1, max 4 | Pages OCR'd in parallel |
 | `CORS_ORIGIN` | `http://localhost:5173` | The development frontend |
@@ -201,7 +220,8 @@ backend/
   app/                      the application (api, services, domain, infra)
   document_processing/      the original extractor (PDF, OCR, Excel, tables)
   wsgi.py                   starts the backend
-  create_admin.py           manages administrator accounts
+  create_superadmin.py      creates the super administrator (once), --reset, --show
+  create_admin.py           manages administrator accounts (fallback)
   evaluate_corpus.py        runs a corpus campaign from the command line
   add_users_schema.py       one-time migration (users table), already run
   reset_stranded_cases.py   one-time repair script
@@ -238,7 +258,8 @@ What **every file** does: [`docs/FILE-GUIDE.md`](docs/FILE-GUIDE.md).
   production deployment, real non-anonymised client data.
 - **Scanned PDFs:** OCR recovers text, and a table is rebuilt from word
   positions, but a skewed or low-resolution scan can still yield nothing
-  usable. The item can then be keyed in by hand.
+  usable. The analyst can then press **Read with AI** (needs
+  `ANTHROPIC_API_KEY`, costs model time, cached) or key the item in by hand.
 - **No database migrations:** `create_all` creates missing tables but never
   alters an existing one (see `DATA-MODEL-REVIEW.md`).
 - **Confidentiality (NFR-04):** public or anonymised documents only. A real

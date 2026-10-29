@@ -25,14 +25,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as api from '../api/client.js'
 import ChecksPanel from '../components/ChecksPanel.jsx'
+import CaseDiscussion from '../components/CaseDiscussion.jsx'
 import StatusPill from '../components/StatusPill.jsx'
 import ExcelSourceViewer from "../components/ExcelSourceViewer.jsx";
 import DangerDialog from '../components/DangerDialog.jsx'
 import AddItemForm from '../components/AddItemForm.jsx'
 import { useCheckText } from '../components/ChecksPanel.jsx'
-import { useI18n } from '../i18n/index.jsx'
+import { asDate, useI18n } from '../i18n/index.jsx'
 
 function displayEngine(extraction, t) {
+  if (extraction.engine === 'LLM_VISION') return t('vision.engine')
   if (extraction.engine === 'LLM') return 'Claude'
   if (extraction.engine === 'RULE_BASED') return t('review.ruleBased')
   return extraction.engine || t('ratioStatus.UNKNOWN')
@@ -71,7 +73,7 @@ function formatDate(value, locale) {
   if (!value) return '—'
 
   try {
-    return new Date(value).toLocaleString(locale)
+    return asDate(value).toLocaleString(locale)  // UTC, shown in local time
   } catch {
     return value
   }
@@ -1362,6 +1364,15 @@ export default function ReviewPage() {
           )}
         </div>
       </section>
+
+      {/* =========================================================
+          DISCUSSION BETWEEN SUPERVISORS (supervisors only)
+         ========================================================= */}
+      {canSupervise && (
+        <section className="review-full-section">
+          <CaseDiscussion caseId={caseId} assignedTo={assignedTo || validatedBy} />
+        </section>
+      )}
 
       {correctionRequest && (
         <DangerDialog

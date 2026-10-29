@@ -93,7 +93,10 @@ function Area({ value, onChange, rows = 3, disabled }) {
   )
 }
 
-export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }) {
+// canAct: the signed-in user is the case's analyst — the only one who may
+// draft the commentary again and approve it (the backend refuses anyone
+// else with 403). Everyone else reads it, and is told who decides.
+export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange, canAct = true, owner }) {
   const [form, setForm] = useState(() => toForm(analysis?.sections, ratios))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -174,12 +177,18 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
 
       {error && <div className="banner fail">{error}</div>}
 
+      {!canAct && analysis?.status !== 'APPROVED' && (
+        <p className="faint">{t('ai.onlyOwner', { name: owner || t('sup.unassigned') })}</p>
+      )}
+
       {!analysis && (
         <>
           <p className="muted">{t('ai.none')}</p>
-          <button type="button" className="primary" disabled={busy} onClick={regenerate}>
-            {busy ? t('ai.drafting') : t('ai.draft')}
-          </button>
+          {canAct && (
+            <button type="button" className="primary" disabled={busy} onClick={regenerate}>
+              {busy ? t('ai.drafting') : t('ai.draft')}
+            </button>
+          )}
         </>
       )}
 
@@ -190,9 +199,11 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
             <br />
             {t('ai.failedBody')}
           </div>
-          <button type="button" disabled={busy} onClick={regenerate}>
-            {busy ? t('ai.drafting') : t('ai.tryAgain')}
-          </button>
+          {canAct && (
+            <button type="button" disabled={busy} onClick={regenerate}>
+              {busy ? t('ai.drafting') : t('ai.tryAgain')}
+            </button>
+          )}
         </>
       )}
 
@@ -202,7 +213,7 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
             <strong>{t('ai.draftTitle')}</strong>{' '}
             {t('ai.draftBody')}
           </div>
-          {otherLanguage && (
+          {otherLanguage && canAct && (
             <div className="banner info">
               {t('ai.otherLanguage', {
                 written: languageName(analysis.language),
@@ -216,12 +227,12 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
           {meta}
 
           <Block title={t('ai.overview')}>
-            <Area value={form.overview} rows={4} disabled={busy}
+            <Area value={form.overview} rows={4} disabled={busy || !canAct}
               onChange={(value) => setForm({ ...form, overview: value })} />
           </Block>
 
           <Block title={t('ai.diagnosis')}>
-            <Area value={form.diagnosis} rows={5} disabled={busy}
+            <Area value={form.diagnosis} rows={5} disabled={busy || !canAct}
               onChange={(value) => setForm({ ...form, diagnosis: value })} />
           </Block>
 
@@ -229,7 +240,7 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
             <Block key={ratio.code} title={`${ratio.code} — ${ratioName(ratio.code)}`}>
               <Area
                 value={form.ratios[ratio.code] || ''}
-                disabled={busy}
+                disabled={busy || !canAct}
                 onChange={(value) =>
                   setForm({ ...form, ratios: { ...form.ratios, [ratio.code]: value } })
                 }
@@ -238,33 +249,35 @@ export default function AiCommentaryPanel({ caseId, analysis, ratios, onChange }
           ))}
 
           <Block title={t('ai.checks')}>
-            <Area value={form.checks} disabled={busy}
+            <Area value={form.checks} disabled={busy || !canAct}
               onChange={(value) => setForm({ ...form, checks: value })} />
           </Block>
 
           <Block title={t('ai.comparison')}>
-            <Area value={form.comparison} disabled={busy}
+            <Area value={form.comparison} disabled={busy || !canAct}
               onChange={(value) => setForm({ ...form, comparison: value })} />
           </Block>
 
           <Block title={t('ai.recommendationsEdit')}>
-            <Area value={form.recommendations} rows={5} disabled={busy}
+            <Area value={form.recommendations} rows={5} disabled={busy || !canAct}
               onChange={(value) => setForm({ ...form, recommendations: value })} />
           </Block>
 
           <Block title={t('ai.attentionEdit')}>
-            <Area value={form.attention} rows={4} disabled={busy}
+            <Area value={form.attention} rows={4} disabled={busy || !canAct}
               onChange={(value) => setForm({ ...form, attention: value })} />
           </Block>
 
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            <button type="button" disabled={busy} onClick={regenerate}>
-              {t('ai.redraft')}
-            </button>
-            <button type="button" className="primary" disabled={busy} onClick={approve}>
-              {busy ? t('common.saving') : t('ai.approveAs', { name: api.getAnalystName() || '…' })}
-            </button>
-          </div>
+          {canAct && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" disabled={busy} onClick={regenerate}>
+                {t('ai.redraft')}
+              </button>
+              <button type="button" className="primary" disabled={busy} onClick={approve}>
+                {busy ? t('common.saving') : t('ai.approveAs', { name: api.getAnalystName() || '…' })}
+              </button>
+            </div>
+          )}
         </>
       )}
 

@@ -185,15 +185,18 @@ that is why — and the answer is a migration tool (Alembic). Not this week.
 
 The review above is kept as written: it is the record of how the schema got
 its shape. The schema has grown since, with the features of October. All
-tables live in `backend/app/infra/db/models.py`; there are now **13**.
+tables live in `backend/app/infra/db/models.py`; there are now **16**.
 
 | Table or column | Added for | What it holds |
 |---|---|---|
 | `analysis_case.analyst` | My cases (item 4) | The full name of the analyst who owns the case. Added to the existing table once by a one-time script, because `create_all` never alters a table. |
 | `ai_analysis` | AI commentary (item 4) | One commentary per validated dataset: status (DRAFT, APPROVED, FAILED), the model's original sections and the approved ones, model, prompt version and language, cost, failure reason, who approved it and when. |
-| `app_user` | Sign-in and roles (item 5) | Username and full name (both unique), role (ANALYST, SUPERVISOR, ADMIN), password **hash** (never the password), active flag. Created by `add_users_schema.py`. |
+| `app_user` | Sign-in and roles (item 5) | Username and full name (both unique), role (ANALYST, SUPERVISOR, ADMIN, SUPERADMIN — exactly one, created by `create_superadmin.py`), password **hash** (never the password), active flag. Created by `add_users_schema.py`. |
 | `evaluation_campaign` | Week 7, exercise 20 | One row per campaign: kind (CORPUS or SENSITIVITY), when, who, engine, corpus folder, note, the headline figures in their own columns, the full summary and the input fingerprints as JSON. |
 | `evaluation_package` | Week 7, exercise 20 | One row per package of a corpus campaign, with its figures and full detail; deleted with its campaign (`ON DELETE CASCADE`). |
+| `archive_entry` | The archive (27 Oct) | One row per deletion: kind (case, document, user, campaign, corpus file or package), label, who deleted it and when, a summary, and the whole object as JSON (`payload`, never shown in the data browser) so it can be restored with the same ids. Purging deletes the row. |
+| `case_comment` | Supervisors' discussion (27 Oct) | One message: case id, author (the signed-in supervisor's name), text (at most 2000 characters), when. Deleted with its case, and archived and restored with it. |
+| `case_discussion_read` | Supervisors' discussion (27 Oct) | When each supervisor last opened each case's thread, so the bell counts only unread messages. |
 
 Two points of the review have moved on:
 

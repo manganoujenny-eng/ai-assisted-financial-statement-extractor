@@ -67,11 +67,11 @@ def test_the_administrator_adds_a_supervisor(app):
     assert added.status_code == 201 and added.get_json()["role"] == "SUPERVISOR"
 
 
-def test_nobody_adds_an_administrator_from_the_screens(app):
+def test_an_administrator_does_not_add_an_administrator(app):
     refused = _login(app, "ada").post("/api/users", json={
         "username": "eve", "full_name": "Eve", "role": "ADMIN", "password": "12345678"})
     assert refused.status_code == 409
-    assert "create_admin.py" in refused.get_json()["detail"]
+    assert "super administrator" in refused.get_json()["detail"]
 
 
 def test_the_administrator_resets_deactivates_and_deletes_a_supervisor(app):

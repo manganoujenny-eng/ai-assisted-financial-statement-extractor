@@ -364,7 +364,9 @@ class AiAnalysis:
 ROLE_ANALYST = "ANALYST"
 ROLE_SUPERVISOR = "SUPERVISOR"
 ROLE_ADMIN = "ADMIN"
-ROLES = (ROLE_ANALYST, ROLE_SUPERVISOR, ROLE_ADMIN)
+#: Exactly one, created once with backend/create_superadmin.py.
+ROLE_SUPERADMIN = "SUPERADMIN"
+ROLES = (ROLE_ANALYST, ROLE_SUPERVISOR, ROLE_ADMIN, ROLE_SUPERADMIN)
 
 
 @dataclass
@@ -384,7 +386,13 @@ class User:
       manages the evaluation corpus and runs the campaigns. An
       administrator neither prepares nor validates a case, so the
       separation above stays intact. Administrator accounts are created
-      with ``backend/create_admin.py``, never from the screens.
+      by the super administrator (Users page) or with
+      ``backend/create_admin.py``.
+    * SUPERADMIN — exactly one, created once with
+      ``backend/create_superadmin.py``. Everything an administrator does,
+      plus managing the administrators. Nobody manages this account from
+      the screens. ``is_admin`` is true for it too: it opens the same
+      administration area.
 
     ``full_name`` is what every record shows (validated_by, corrected_by,
     a case's analyst, audit authors). ``username`` is only for signing in.
@@ -410,7 +418,12 @@ class User:
 
     @property
     def is_admin(self) -> bool:
-        return self.role == ROLE_ADMIN
+        """An administrator — the super administrator included."""
+        return self.role in (ROLE_ADMIN, ROLE_SUPERADMIN)
+
+    @property
+    def is_superadmin(self) -> bool:
+        return self.role == ROLE_SUPERADMIN
 
     @property
     def is_analyst(self) -> bool:
@@ -458,3 +471,72 @@ class EvaluationCampaign:
     def __post_init__(self) -> None:
         if self.kind not in CAMPAIGN_KINDS:
             raise DomainError(f"unknown campaign kind {self.kind!r} — expected one of {CAMPAIGN_KINDS}")
+
+
+# ==========================================================================
+# The archive — every deletion, kept so the administrator can undo it
+# ==========================================================================
+ARCHIVE_CASE = "CASE"
+ARCHIVE_DOCUMENT = "DOCUMENT"
+ARCHIVE_USER = "USER"
+ARCHIVE_CORPUS_FILE = "CORPUS_FILE"
+ARCHIVE_CORPUS_PACKAGE = "CORPUS_PACKAGE"
+ARCHIVE_CAMPAIGN = "CAMPAIGN"
+ARCHIVE_KINDS = (ARCHIVE_CASE, ARCHIVE_DOCUMENT, ARCHIVE_USER, ARCHIVE_CORPUS_FILE,
+                 ARCHIVE_CORPUS_PACKAGE, ARCHIVE_CAMPAIGN)
+
+
+@dataclass
+class ArchiveEntry:
+    """Something someone deleted, kept whole.
+
+    For the person who deleted it, it is gone. The administrator sees it in
+    the archive and can restore it exactly as it was — same identifiers,
+    same history — or delete it for good.
+
+    ``payload`` is the complete copy needed to restore (entities encoded as
+    plain JSON by ``services/archive_service.py``); it never leaves the
+    backend. ``detail`` is a short summary for the screen (counts, file
+    name, role...). ``label`` names the thing in one line.
+    """
+
+    kind: str
+    entity_id: str
+    label: str
+    payload: dict
+    detail: dict = field(default_factory=dict)
+    deleted_by: str | None = None
+    id: str = field(default_factory=_new_id)
+    deleted_at: datetime = field(default_factory=_now)
+
+
+# ==========================================================================
+# Discussion between supervisors about a case
+# ==========================================================================
+#: A message is a suggestion, not a decision: at most this long.
+MAX_COMMENT_LENGTH = 2000
+
+
+@dataclass
+class CaseComment:
+    """One message in a case's discussion between supervisors.
+
+    Only the supervisor a case is assigned to acts on it; the others give
+    their opinion here, and that supervisor replies. Its author may edit it
+    (``edited_at``) or delete it (``deleted_at``): a deleted message stays
+    in the thread as "deleted", without its text. The audit log keeps what
+    was written.
+    """
+
+    case_id: str
+    author: str
+    message: str
+    id: str = field(default_factory=_new_id)
+    created_at: datetime = field(default_factory=_now)
+    edited_at: datetime | None = None
+    deleted_at: datetime | None = None
+
+    @property
+    def deleted(self) -> bool:
+        return self.deleted_at is not None
+

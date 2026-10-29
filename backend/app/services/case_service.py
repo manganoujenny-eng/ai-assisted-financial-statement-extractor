@@ -51,6 +51,8 @@ class CaseService:
         datasets: DatasetRepository,
         audit: AuditLog,
         ai_analyses: AiAnalysisRepository | None = None,
+        archive=None,
+        comments=None,
     ) -> None:
         self.cases = cases
         self.documents = documents
@@ -58,6 +60,11 @@ class CaseService:
         self.datasets = datasets
         self.audit = audit
         self.ai_analyses = ai_analyses
+        #: ArchiveService: a complete copy of what is deleted goes there
+        #: first, so the administrator can restore it (None: no archive).
+        self.archive = archive
+        #: The supervisors' discussion of each case (deleted with the case).
+        self.comments = comments
 
     # --- metadata edits ---------------------------------------------------
     def update(
@@ -208,6 +215,7 @@ class CaseService:
             f"case {case.id}",
         )
 
+        archived = self.archive.keep_document(case, document, author) if self.archive else None
         self._detach_document_from_runs(document)
         self.documents.delete(document.id)
         case.documents = [d for d in case.documents if d.id != document.id]
@@ -222,7 +230,8 @@ class CaseService:
                 entity_id=document.id,
                 action="DELETED",
                 author=author,
-                detail={"case_id": case.id, "file_name": document.file_name},
+                detail={"case_id": case.id, "file_name": document.file_name,
+                        **({"archive_id": archived.id} if archived else {})},
             )
         )
         return case
@@ -240,6 +249,10 @@ class CaseService:
         self._guard_delete(
             self._case_has_validated_result(case), role, f"case {case.id}"
         )
+        # The complete copy first, while everything is still there.
+        archived = self.archive.keep_case(case, author) if self.archive else None
+        if self.comments is not None:
+            self.comments.delete_for_case(case.id)
         # AI commentary first: it refers to the case's datasets.
         if self.ai_analyses is not None:
             self.ai_analyses.delete_for_case(case.id)
@@ -265,6 +278,7 @@ class CaseService:
                 entity_id=case.id,
                 action="DELETED",
                 author=author,
-                detail={"client": case.client, "fiscal_year": case.fiscal_year},
+                detail={"client": case.client, "fiscal_year": case.fiscal_year,
+                        **({"archive_id": archived.id} if archived else {})},
             )
         )

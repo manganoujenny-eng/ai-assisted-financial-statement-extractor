@@ -9,10 +9,12 @@
  * the role when the account is created), rename, reset, deactivate,
  * reactivate, delete — never the last active supervisor.
  *
- * Nobody manages an administrator here: those accounts are created with
- * backend/create_admin.py, and every user (administrator included) manages
- * their own name and password on My account. The backend refuses the same
- * things (409), so hiding the buttons only keeps the page honest.
+ * The super administrator (exactly one, created once with
+ * backend/create_superadmin.py) does the same for ADMINISTRATORS too.
+ * An administrator never manages another administrator, and nobody manages
+ * the super administrator here. Every user manages their own name and
+ * password on My account. The backend refuses the same things (409), so
+ * hiding the buttons only keeps the page honest.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -26,8 +28,9 @@ const EMPTY = { username: '', full_name: '', password: '', role: 'ANALYST' }
 /* May the signed-in person change this account? */
 function canManage(viewer, user) {
   if (user.id === viewer.id) return false // their own: My account
-  if (user.role === 'ADMIN') return false
-  if (user.role === 'SUPERVISOR') return viewer.role === 'ADMIN'
+  if (user.role === 'SUPERADMIN') return false
+  if (user.role === 'ADMIN') return viewer.role === 'SUPERADMIN'
+  if (user.role === 'SUPERVISOR') return ['ADMIN', 'SUPERADMIN'].includes(viewer.role)
   return true // an analyst: supervisor or administrator
 }
 
@@ -146,7 +149,8 @@ export default function UsersPage({ currentUser }) {
   // The account waiting for the delete confirmation, or null.
   const [pendingDelete, setPendingDelete] = useState(null)
   const { t } = useI18n()
-  const admin = currentUser.role === 'ADMIN'
+  const superadmin = currentUser.role === 'SUPERADMIN'
+  const admin = currentUser.role === 'ADMIN' || superadmin
 
   async function reload() {
     try {
@@ -209,7 +213,13 @@ export default function UsersPage({ currentUser }) {
   return (
     <>
       <h2 className="page-title">{t('nav.users')}</h2>
-      <p className="page-subtitle">{admin ? t('users.subtitleAdmin') : t('users.subtitleAnalysts')}</p>
+      <p className="page-subtitle">
+        {superadmin
+          ? t('users.subtitleSuperadmin')
+          : admin
+            ? t('users.subtitleAdmin')
+            : t('users.subtitleAnalysts')}
+      </p>
 
       {error && <div className="banner fail">{error}</div>}
       {message && <div className="banner info">{message}</div>}
@@ -253,6 +263,7 @@ export default function UsersPage({ currentUser }) {
               >
                 <option value="ANALYST">{t('users.analyst')}</option>
                 <option value="SUPERVISOR">{t('users.supervisor')}</option>
+                {superadmin && <option value="ADMIN">{t('users.administrator')}</option>}
               </select>
             </label>
           )}
@@ -274,6 +285,7 @@ export default function UsersPage({ currentUser }) {
         </div>
         <p className="faint" style={{ margin: '12px 0 0' }}>
           {admin ? t('users.adminNote') : t('users.supervisorsNoteAdmin')}
+          {superadmin && <> {t('users.superadminNote')}</>}
         </p>
       </form>
 
@@ -289,6 +301,7 @@ export default function UsersPage({ currentUser }) {
             <option value="ANALYST">{t('users.analyst')}</option>
             <option value="SUPERVISOR">{t('users.supervisor')}</option>
             <option value="ADMIN">{t('users.administrator')}</option>
+            <option value="SUPERADMIN">{t('users.superadministrator')}</option>
           </select>
           <input
             type="search"
@@ -345,7 +358,9 @@ export default function UsersPage({ currentUser }) {
           <p>
             {pendingDelete.user.role === 'SUPERVISOR'
               ? t('users.deleteSupervisorBody')
-              : t('users.deleteBody')}
+              : pendingDelete.user.role === 'ADMIN'
+                ? t('users.deleteAdminBody')
+                : t('users.deleteBody')}
           </p>
           {pendingDelete.error && <div className="banner fail">{pendingDelete.error}</div>}
         </DangerDialog>

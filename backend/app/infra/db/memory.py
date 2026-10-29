@@ -263,3 +263,61 @@ class InMemoryEvaluationRepository:
 
     def delete(self, campaign_id: str) -> bool:
         return self._campaigns.pop(campaign_id, None) is not None
+
+
+class InMemoryArchiveRepository:
+    def __init__(self) -> None:
+        self._entries: dict[str, E.ArchiveEntry] = {}
+
+    def add(self, entry: E.ArchiveEntry) -> None:
+        self._entries[entry.id] = entry
+
+    def get(self, entry_id: str) -> E.ArchiveEntry | None:
+        return self._entries.get(entry_id)
+
+    def list(self, kind: str | None = None) -> list[E.ArchiveEntry]:
+        found = [e for e in self._entries.values() if kind is None or e.kind == kind]
+        return sorted(found, key=lambda e: e.deleted_at, reverse=True)
+
+    def delete(self, entry_id: str) -> None:
+        self._entries.pop(entry_id, None)
+
+
+class InMemoryCommentRepository:
+    def __init__(self) -> None:
+        self._comments: list[E.CaseComment] = []
+        self._read: dict[tuple[str, str], object] = {}
+        self._hidden: set[tuple[str, str, str]] = set()  # (user, case, comment)
+
+    def add(self, comment: E.CaseComment) -> None:
+        self._comments.append(comment)
+
+    def get(self, comment_id: str) -> E.CaseComment | None:
+        return next((c for c in self._comments if c.id == comment_id), None)
+
+    def save(self, comment: E.CaseComment) -> None:
+        self._comments = [comment if c.id == comment.id else c for c in self._comments]
+
+    def list_for_case(self, case_id: str) -> list[E.CaseComment]:
+        return [c for c in self._comments if c.case_id == case_id]
+
+    def list(self) -> list[E.CaseComment]:
+        return list(self._comments)
+
+    def delete_for_case(self, case_id: str) -> None:
+        self._comments = [c for c in self._comments if c.case_id != case_id]
+        self._read = {k: v for k, v in self._read.items() if k[1] != case_id}
+        self._hidden = {h for h in self._hidden if h[1] != case_id}
+
+    def read_at(self, user_id: str, case_id: str):
+        return self._read.get((user_id, case_id))
+
+    def mark_read(self, user_id: str, case_id: str, at) -> None:
+        self._read[(user_id, case_id)] = at
+
+    def hide(self, user_id: str, case_id: str, comment_id: str) -> None:
+        self._hidden.add((user_id, case_id, comment_id))
+
+    def hidden(self, user_id: str, case_id: str) -> set[str]:
+        return {h[2] for h in self._hidden if h[0] == user_id and h[1] == case_id}
+

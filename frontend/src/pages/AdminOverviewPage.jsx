@@ -18,7 +18,7 @@ import { useI18n } from '../i18n/index.jsx'
 
 // The order a case goes through (EXTRACTION_FAILED sits beside EXTRACTING).
 const FLOW = ['CREATED', 'EXTRACTING', 'EXTRACTED', 'UNDER_REVIEW', 'SUBMITTED', 'VALIDATED', 'ANALYSED']
-const ROLES = ['ADMIN', 'SUPERVISOR', 'ANALYST']
+const ROLES = ['SUPERADMIN', 'ADMIN', 'SUPERVISOR', 'ANALYST']
 
 function Section({ title, action, children, className = '' }) {
   return (

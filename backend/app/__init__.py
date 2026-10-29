@@ -30,6 +30,8 @@ from .domain.ports import (
 )
 from .infra.db.memory import (
     InMemoryAiAnalysisRepository,
+    InMemoryArchiveRepository,
+    InMemoryCommentRepository,
     InMemoryAuditLog,
     InMemoryCaseRepository,
     InMemoryDatasetRepository,
@@ -41,9 +43,11 @@ from .infra.db.memory import (
 from .infra.llm.rule_based import RuleBasedStructurer
 from .infra.pdf.readers import default_readers
 from .services.analysis_service import AnalysisService
+from .services.archive_service import ArchiveService
 from .services.case_service import CaseService
 from .services.evaluation_service import EvaluationService
 from .services.extraction_service import ExtractionService
+from .services.discussion_service import DiscussionService
 from .services.insight_service import InsightService
 from .services.user_service import UserService
 from .services.validation_service import ValidationService
@@ -69,6 +73,16 @@ class Container:
     user_service: UserService
     #: Week 7 campaigns (exercise 20).
     evaluations: EvaluationRepository
+    #: Every deletion, kept for the administrator (restore / delete for good).
+    archive: object = None
+    archive_service: ArchiveService | None = None
+    #: The supervisors' discussion of each case: the messages, and the
+    #: rules (who writes when, edit, delete, who is writing).
+    comments: object = None
+    discussion: DiscussionService | None = None
+    #: "Read with AI": the model reads a scanned PDF from images of its
+    #: pages. None without ANTHROPIC_API_KEY (the screen then says why).
+    vision: object = None
     #: The SQLAlchemy session with STORAGE=sql, else None. Only the
     #: administrator's read-only data browser uses it directly.
     database: object | None = None
@@ -80,7 +94,9 @@ def build_container(config: Config | None = None) -> Container:
     if config.storage == "sql":
         from .infra.db.repositories import (
             SqlAiAnalysisRepository,
+            SqlArchiveRepository,
             SqlAuditLog,
+            SqlCommentRepository,
             SqlCaseRepository,
             SqlDatasetRepository,
             SqlDocumentRepository,
@@ -101,6 +117,8 @@ def build_container(config: Config | None = None) -> Container:
         ai_analyses = SqlAiAnalysisRepository(session)
         users = SqlUserRepository(session)
         evaluations = SqlEvaluationRepository(session)
+        archive = SqlArchiveRepository(session)
+        comments = SqlCommentRepository(session)
         database = session
     else:
         cases = InMemoryCaseRepository()
@@ -111,6 +129,8 @@ def build_container(config: Config | None = None) -> Container:
         ai_analyses = InMemoryAiAnalysisRepository()
         users = InMemoryUserRepository()
         evaluations = InMemoryEvaluationRepository()
+        archive = InMemoryArchiveRepository()
+        comments = InMemoryCommentRepository()
         database = None
 
     # Item 4 — rule-based for figures, checks and ratios (above and in the
@@ -134,6 +154,20 @@ def build_container(config: Config | None = None) -> Container:
         else:
             unavailable_reason = "AI analysis needs ANTHROPIC_API_KEY in the backend .env"
 
+    vision = None
+    if config.anthropic_api_key:
+        from .infra.llm.claude_vision import ClaudeVisionStructurer
+
+        vision = ClaudeVisionStructurer(
+            api_key=config.anthropic_api_key,
+            model=config.model,
+            max_cost_usd=config.max_cost_usd,
+            input_usd_per_mtok=config.input_usd_per_mtok,
+            output_usd_per_mtok=config.output_usd_per_mtok,
+            effort=config.llm_effort,
+            max_pages=config.vision_max_pages,
+        )
+
     if config.structurer == "llm":
         from .infra.llm.claude_structurer import ClaudeStructurer
 
@@ -147,6 +181,12 @@ def build_container(config: Config | None = None) -> Container:
         )
     else:
         structurer = RuleBasedStructurer()
+
+    archive_service = ArchiveService(
+        archive, audit, cases, documents, extractions, datasets, ai_analyses, users,
+        evaluations, upload_dir=config.upload_dir, archive_dir=config.archive_dir,
+        comments=comments,
+    )
 
     extraction = ExtractionService(
         readers=default_readers(),
@@ -168,13 +208,19 @@ def build_container(config: Config | None = None) -> Container:
         analysis=AnalysisService(audit),
         evaluation=EvaluationService(),
         case_management=CaseService(
-            cases, documents, extractions, datasets, audit, ai_analyses
+            cases, documents, extractions, datasets, audit, ai_analyses,
+            archive=archive_service, comments=comments,
         ),
         ai_analyses=ai_analyses,
         insight=InsightService(analyst_writer, ai_analyses, audit, unavailable_reason),
         users=users,
-        user_service=UserService(users, audit, cases),
+        user_service=UserService(users, audit, cases, archive=archive_service),
         evaluations=evaluations,
+        archive=archive,
+        archive_service=archive_service,
+        comments=comments,
+        discussion=DiscussionService(comments, audit),
+        vision=vision,
         database=database,
     )
 

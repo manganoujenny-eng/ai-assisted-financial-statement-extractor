@@ -46,6 +46,9 @@ class Config:
     #: (low | medium | high | xhigh | max). medium is the model's default;
     #: low is cheaper and is enough for reading figures off a table.
     llm_effort: str = os.environ.get("LLM_EFFORT", "medium")
+    #: "Read with AI" (scanned PDFs the OCR cannot read): at most this many
+    #: pages are sent to the model, as images. Needs ANTHROPIC_API_KEY.
+    vision_max_pages: int = int(os.environ.get("VISION_MAX_PAGES", "12"))
 
     #: AI commentary on validated analyses (item 4): "llm" or "off".
     #: "llm" needs ANTHROPIC_API_KEY. Model and prices are separate from the
@@ -60,6 +63,9 @@ class Config:
     )
 
     upload_dir: Path = Path(os.environ.get("UPLOAD_DIR", ROOT / "data" / "uploads"))
+    #: Where the archive keeps the files of deleted corpus packages (the
+    #: database rows of a deletion are kept in the archive_entry table).
+    archive_dir: Path = Path(os.environ.get("ARCHIVE_DIR", ROOT / "data" / "archive"))
     #: A full SYSCOHADA package scanned at a readable resolution is easily
     #: 50-150 MB. The file is streamed to disk and hashed in chunks, so the
     #: limit is about disk space and patience, not memory.

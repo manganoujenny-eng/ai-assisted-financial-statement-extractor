@@ -107,6 +107,8 @@ def run_json(run: E.ExtractionRun, fields: bool = True) -> dict:
         "started_at": run.started_at.isoformat(),
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "failure_reason": run.failure_reason,
+        # What the model cost for this run (None for the rule-based reader).
+        "cost_usd": str(run.cost_usd) if run.cost_usd is not None else None,
         "field_count": len(run.fields),
     }
     if fields:

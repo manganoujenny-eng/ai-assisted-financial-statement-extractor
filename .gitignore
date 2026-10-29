@@ -27,6 +27,7 @@ frontend/.vite/
 
 # Local prototype data
 data/uploads/
+data/archive/
 data/prototype.db
 data/llm_cache/
 

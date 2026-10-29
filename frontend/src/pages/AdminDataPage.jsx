@@ -17,10 +17,10 @@ import { Pager } from '../components/AdminBits.jsx'
 import { labelByCode, useI18n } from '../i18n/index.jsx'
 
 const GROUPS = [
-  ['cases', ['analysis_case', 'document']],
+  ['cases', ['analysis_case', 'document', 'case_comment', 'case_discussion_read', 'case_discussion_hidden']],
   ['extraction', ['extraction_run', 'extracted_field', 'check_result']],
   ['results', ['validated_dataset', 'ratio_result', 'interpretation', 'ai_analysis']],
-  ['people', ['app_user', 'audit_log']],
+  ['people', ['app_user', 'audit_log', 'archive_entry']],
   ['evaluation', ['evaluation_campaign', 'evaluation_package']],
 ]
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

@@ -10,6 +10,7 @@ import { Link, useParams } from 'react-router-dom'
 import * as api from '../api/client.js'
 import ChecksPanel from '../components/ChecksPanel.jsx'
 import AiCommentaryPanel from '../components/AiCommentaryPanel.jsx'
+import CaseDiscussion from '../components/CaseDiscussion.jsx'
 import { KeyFigures, RatioComparison } from '../components/YearComparisonChart.jsx'
 import { labelByCode, useI18n } from '../i18n/index.jsx'
 import { interpretationText, reasonText, referenceSourceText } from '../i18n/interpretation.js'
@@ -278,7 +279,7 @@ export default function DashboardPage() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [selectedRatio, setSelectedRatio] = useState(null)
-  const { t, formatDateTime } = useI18n()
+  const { t, lang, formatDateTime } = useI18n()
 
   useEffect(() => {
     let cancelled = false
@@ -447,10 +448,14 @@ export default function DashboardPage() {
         caseId={caseId}
         analysis={data.ai_analysis}
         ratios={ratios}
+        canAct={data.can_comment !== false}
+        owner={data.case?.analyst}
         onChange={(analysis) =>
           setData((current) => ({ ...current, ai_analysis: analysis }))
         }
       />
+
+      {api.isSupervisor() && <CaseDiscussion caseId={caseId} />}
 
       <section className="card dashboard-export">
         <div>
@@ -460,15 +465,29 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="primary"
-          onClick={() => {
-            window.location.href = `/api/cases/${caseId}/export`
-          }}
-        >
-          {t('dash.exportButton')}
-        </button>
+        <div className="dashboard-export-buttons">
+          {/* A PDF report to hand over, or the Excel workbook: the same
+              content (a summary of what the analysis says, the ratios, the
+              checks, the amounts, the AI commentary once approved), both in
+              the screen's language. */}
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              window.location.href = `/api/cases/${caseId}/export?format=pdf&lang=${lang}`
+            }}
+          >
+            {t('dash.exportPdf')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = `/api/cases/${caseId}/export?format=xlsx&lang=${lang}`
+            }}
+          >
+            {t('dash.exportButton')}
+          </button>
+        </div>
       </section>
     </>
   )

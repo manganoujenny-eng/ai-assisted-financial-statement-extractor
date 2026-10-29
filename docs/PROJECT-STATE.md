@@ -1,10 +1,12 @@
 # SYSCOHADA Extractor: Project State and Continuity Log
 
-**First generated:** 12 October 2026. **Updated:** 22 October 2026, again by
+**First generated:** 12 October 2026. **Updated:** 22 October 2026, and on
+27 October 2026 for the six changes of §12 (super administrator, archive,
+PDF export, supervisors' discussion, case responsibility, Read with AI), again by
 reading every file of the live codebase at
 `C:\Users\HP\PycharmProjects\Financial Project`, not by remembering a
 conversation. Sections 3–7 and 10 state what the code does today. Section 8
-is the history, section 9 the working agreement, sections 11–12 the fixes
+is the history, section 9 the working agreement, sections 10–12 the fixes
 and the work done since the first version of this file.
 
 **Why this file exists:** you asked that nothing be lost again, and that
@@ -72,11 +74,11 @@ FRONTEND (React + Vite)       pages by role, api/client.js, i18n (en/fr)
 API (Flask, backend/app/api/) routes.py · auth.py (sign-in, roles) · admin.py
      |
 SERVICES (orchestration)      extraction · validation · analysis · insight (AI)
-     |                        case · user · overview · evaluation · corpus_campaign
+     |                        case · user · archive · overview · evaluation · corpus_campaign
 DOMAIN (accounting rules)     entities + lifecycle · checks · ratios ·
      |                        interpretation · statement · syscohada · ports
-INFRA                         pdf readers · rule-based / Claude structurer ·
-                              Claude analyst · cache · SQL + in-memory repos · export
+INFRA                         pdf readers · rule-based / Claude structurer · Claude vision ·
+                              Claude analyst · cache · SQL + in-memory repos · Excel / PDF export
 ```
 
 The dependency rule is enforced by a real test:
@@ -105,7 +107,7 @@ Full layout, file by file: `FILE-GUIDE.md`. Reasons and rule locations:
 | Week 5 | Ex. 11 thresholds | ✅ Done | R1 = 1.0, R3 = 1.0 (sourced); R2, R4, R5 deliberately none |
 | Week 5 | Ex. 12 serve the document, Ex. 13 reopen | ✅ Done | `GET /api/documents/<id>/file`; `ValidationService.reopen()` |
 | Week 6 | Ex. 14 side-by-side review | ✅ Done | `ReviewPage.jsx`: PDF in an iframe, Excel in `ExcelSourceViewer.jsx` |
-| Week 6 | Ex. 15 export | ✅ Done | `GET /api/cases/<id>/export`, `infra/export/spreadsheet.py` |
+| Week 6 | Ex. 15 export | ✅ Done | `GET /api/cases/<id>/export?format=xlsx|pdf`, `infra/export/spreadsheet.py`, `infra/export/pdf_report.py` |
 | FR-15–20 | Dashboard, interpretation, N vs N-1 | ✅ Done | `DashboardPage.jsx`, `YearComparisonChart.jsx` |
 | Week 7 | Ex. 16 silent false positives | ✅ Done | `EvaluationService.silent_false_positives` + tests |
 | Week 7 | Ex. 17 field accuracy | ✅ Done | exact to the franc; a missing field counts as wrong |
@@ -143,9 +145,11 @@ figures). The proposed amount is never overwritten (BR-10).
 
 **Roles:** ANALYST (prepares their own cases), SUPERVISOR (validates the
 cases submitted to them, manages analysts, sees everyone's work, deletes
-analysed cases they validated), ADMIN (runs the system: accounts, audit,
-data, corpus and campaigns; never prepares nor validates). Administrators
-exist only through `create_admin.py`.
+analysed cases they validated, discuss any case), ADMIN (runs the system:
+accounts, audit, data, corpus, campaigns, archive; never prepares nor
+validates), SUPERADMIN (exactly one, created by `create_superadmin.py`:
+everything an administrator does, plus managing administrators). Only the
+person a case is assigned to acts on it.
 
 **The five ratios:**
 
@@ -197,10 +201,12 @@ SQLite `data/prototype.db` when empty). No migration tool (Alembic):
 `create_all()` creates missing tables and never alters an existing one;
 column additions were done once with `add_users_schema.py`.
 
-**Tables (13, `infra/db/models.py`):** `analysis_case`, `document`,
+**Tables (16, `infra/db/models.py`):** `analysis_case`, `document`,
 `extraction_run`, `extracted_field`, `check_result`, `validated_dataset`,
 `ratio_result`, `interpretation`, `audit_log`, `ai_analysis`, `app_user`,
-`evaluation_campaign`, `evaluation_package`.
+`evaluation_campaign`, `evaluation_package`, `archive_entry`,
+`case_comment`, `case_discussion_read` (the last three are created by
+`create_all` at the first start after 27 Oct; nothing to migrate).
 
 - No native PostgreSQL ENUM anywhere: status and role columns are plain
   strings, constrained by the constants and the state machine in
@@ -239,13 +245,13 @@ In order of importance for the thesis:
 4. **The XI/XG sign** of the income statement operator column (see
    `EXTRACTION-PIPELINE.md`). CHK003 catches a mismatch with CJ when CJ is
    present.
-5. **One missing guard.** `POST /api/ai-analyses/<id>/approval` and
-   `POST /api/cases/<id>/ai-analysis` check that someone is signed in, but
-   not their role: a supervisor or the administrator could approve or
-   regenerate a commentary through the API, although the screens only offer
-   it to the analyst. The approver's name is still recorded from the
-   session, so it is visible in the audit; the fix is a
-   `require_analyst` + `require_case_owner` on both routes, with a test.
+5. **~~One missing guard~~ — fixed 27 Oct.** Approving and redrafting the
+   AI commentary now require the case's analyst; running the analysis
+   requires the case's analyst or its validator
+   (`test_case_responsibility.py`).
+5b. **Read with AI on the corpus.** Measuring the vision reader on the
+   badly scanned packages (e.g. `ETAT_FINANCIER_TEST2.pdf`) would make a
+   strong paragraph of §19; it needs an API key and costs money (cached).
 6. **Small clean-up:** a few comments describe an earlier state; listed in
    `FILE-GUIDE.md` §9. In `checks.py`, CHK002 reports severity WARNING when
    it passes and BLOCKING when it fails (harmless, since a passed check
@@ -496,3 +502,53 @@ deleting a campaign), Data (read-only browser of every table, grouped and
 explained). The audit now also records case creation, sign-out, the author
 of an upload and every corpus and campaign action. Test:
 `test_admin_area.py`.
+
+---
+
+## 12. Work done on 27 Oct 2026 (verified against the live code; 278 tests)
+
+Six requests, each with its tests written first; all on the machine.
+
+**Case responsibility.** Only the person a case is assigned to acts on it:
+the analysis is run by the case's analyst or its validator
+(`_require_analysis_actor`), the AI commentary is redrafted and approved by
+the case's analyst only, and the dashboard receives `can_comment` so the
+other users see why the buttons are missing. Test:
+`test_case_responsibility.py`.
+
+**Super administrator.** Fourth role, SUPERADMIN, exactly one, created only
+with `create_superadmin.py` (`--reset`, `--show`). It does everything an
+administrator does and is the only account that manages administrators
+from the Users page; nobody manages it from the screens. Test:
+`test_superadmin.py`.
+
+**Archive.** Every deletion (case with everything under it, document,
+account, campaign, corpus file or package) is first kept in `archive_entry`
+by `services/archive_service.py`; corpus files are moved to `ARCHIVE_DIR`.
+Administration → Archive lists them; Restore puts them back with the same
+ids, Purge deletes them for good. Both audited. The user who deleted still
+sees it as deleted. Test: `test_archive.py`.
+
+**Export as PDF or Excel.** The dashboard offers both; the PDF
+(`infra/export/pdf_report.py`, PyMuPDF) is in the screen's language and
+includes the AI commentary only once approved. Test:
+`test_export_formats.py`.
+
+**Supervisors' discussion.** One thread per case (`case_comment`), open to
+supervisors only, on the review page and the dashboard; unread messages
+appear in the bell (`case_discussion_read`); every message is audited; the
+thread is archived and restored with its case. Test:
+`test_case_discussion.py`. Also fixed on the way: times were shown one hour
+off (the backend stores UTC without a zone; `asDate()` now reads them as
+UTC), and the header no longer overflows for administrators and
+supervisors in French.
+
+**Read with AI.** When the OCR cannot read a scan, the case's analyst
+presses Read with AI on the Cases page; a confirmation recalls NFR-04 and
+the cost. `infra/llm/claude_vision.py` sends the page images (at most
+`VISION_MAX_PAGES`, default 12) to Claude with `prompts/vision_v1.md`; the
+answer goes through the same schema check, retry, budget cap and cache as
+the text structurer, and becomes an ordinary extraction run (engine
+`LLM_VISION`) reviewed and validated as usual. Offered only when
+`ANTHROPIC_API_KEY` is set. Tests: `test_vision_reading.py`,
+`test_read_with_ai.py`.

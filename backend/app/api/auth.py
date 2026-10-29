@@ -267,8 +267,9 @@ def list_users():
 
 @users_bp.post("")
 def create_user():
-    """A supervisor adds an analyst; the administrator adds an analyst or a
-    supervisor. Nobody adds an administrator here (create_admin.py)."""
+    """A supervisor adds an analyst; an administrator adds an analyst or a
+    supervisor; the super administrator also adds administrators. Nobody
+    adds the super administrator here (create_superadmin.py)."""
     require_user_manager()
     payload = request.get_json(silent=True) or {}
     user = _container().user_service.create(
@@ -278,6 +279,7 @@ def create_user():
         password=str(payload.get("password") or ""),
         author=actor(default="administrator"),
         allow_supervisor=_manager().is_admin,
+        allow_admin=_manager().is_superadmin,
     )
     return jsonify(user_json(user)), 201
 

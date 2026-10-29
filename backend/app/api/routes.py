@@ -16,6 +16,8 @@ import os
 from decimal import Decimal
 
 from ..infra.export.spreadsheet import export_analysis
+from ..infra.export.pdf_report import export_analysis_pdf
+from ..domain.syscohada import label_of
 
 from flask import Blueprint, current_app, jsonify, request ,send_file
 from werkzeug.exceptions import Forbidden
@@ -26,6 +28,7 @@ from ..domain import entities as E, interpretation
 from ..domain.checks import run_all
 from ..domain.interpretation import interpret_all
 from ..domain.ratios import compute_all
+from ..services.discussion_service import NotYourMessage
 from ..services.insight_service import build_payload
 from ..services.overview_service import build_overview
 from .auth import (
@@ -112,6 +115,8 @@ def health():
             "storage": c.config.storage,
             "structurer": c.structurer.engine,
             "max_upload_mb": c.config.max_upload_mb,
+            # "Read with AI" is offered only when the model is configured.
+            "vision": c.vision is not None,
         }
     )
 
@@ -396,6 +401,10 @@ def run_extraction(case_id: str):
     attached, say — starts a brand-new run over whatever documents the case
     has at that moment; the earlier run is kept, not replaced.
 
+    ``{"engine": "vision"}`` — "Read with AI": the case's PDFs are read by
+    the model from images of their pages, for scans the OCR could not read.
+    Needs ANTHROPIC_API_KEY and at least one PDF in the case.
+
     Synchronous. NFR-03 allows 90 seconds per document, which a browser will
     wait for. The day OCR on a 40-page scan pushes past that, this becomes a
     background job returning 202 with a polling URL — and *only this function*
@@ -405,8 +414,20 @@ def run_extraction(case_id: str):
     c = container()
     case = _need(c.cases.get(case_id), case_id)
     require_case_owner(case)
+    engine = str((request.get_json(silent=True) or {}).get("engine") or "").strip().lower()
+    vision = None
+    if engine == "vision":
+        if c.vision is None:
+            raise E.DomainError(
+                "reading with AI needs the model: set ANTHROPIC_API_KEY in the backend .env"
+            )
+        if not any(d.doc_type == "PDF" for d in case.documents):
+            raise E.DomainError("reading with AI reads PDF pages — this case has no PDF")
+        vision = c.vision
+    elif engine:
+        raise ValueError("engine must be empty (the configured structurer) or 'vision'")
     run = c.extraction.run_extraction(
-        case, author=actor(request.args.get("author"))
+        case, author=actor(request.args.get("author")), vision=vision
     )
     c.cases.save(case)
     return jsonify(run_json(run)), 201
@@ -667,6 +688,116 @@ def _workflow_history(c, case: E.AnalysisCase) -> list[dict]:
     return entries
 
 
+# --- the supervisors' discussion of a case ------------------------------------
+# The rules live in services/discussion_service.py; here: who may read
+# (supervisors), who the case's supervisor is, and the HTTP shapes.
+def _case_supervisor(c, case: E.AnalysisCase) -> str | None:
+    """Whose case it is NOW. Validated or analysed: the supervisor who
+    validated the current result. Otherwise: the one the latest submission
+    went to (None before any). A case validated by A, reopened and
+    submitted to B is B's case — the old validation must not win."""
+    if case.status in {E.VALIDATED, E.ANALYSED}:
+        return _validator(c, case) or _assigned_supervisor(c, case)
+    return _assigned_supervisor(c, case)
+
+
+def _discussion_me() -> str:
+    return actor(default="supervisor")
+
+
+def _discussion_viewer() -> str:
+    """Whose "delete for me" applies: the account (its id survives a
+    rename)."""
+    user = current_user() if auth_required() else None
+    return user.id if user is not None else "supervisor"
+
+
+@bp.get("/cases/<case_id>/discussion")
+def case_discussion(case_id: str):
+    """GET /api/cases/{id}/discussion — the thread, oldest first, with who
+    may write now (``can_write`` / ``why_not``), whose case it is
+    (``assigned_to``) and who is writing (``typing``). Supervisors only.
+    Opening it marks it read (the bell stops announcing it)."""
+    require_supervisor()
+    c = container()
+    case = _need(c.cases.get(case_id), case_id)
+    view = c.discussion.view(case.id, _discussion_me(), _case_supervisor(c, case),
+                             viewer=_discussion_viewer())
+    user = current_user() if auth_required() else None
+    if user is not None:
+        c.comments.mark_read(user.id, case.id, E._now())
+    return jsonify(view)
+
+
+@bp.post("/cases/<case_id>/discussion")
+def post_to_discussion(case_id: str):
+    """POST /api/cases/{id}/discussion — {"message": "..."}. Another
+    supervisor writes about this case; the case's own supervisor replies
+    once someone has written (409 before)."""
+    require_supervisor()
+    c = container()
+    case = _need(c.cases.get(case_id), case_id)
+    body = request.get_json(silent=True) or {}
+    me = _discussion_me()
+    comment = c.discussion.post(case.id, me, _case_supervisor(c, case), body.get("message"))
+    user = current_user() if auth_required() else None
+    if user is not None:
+        c.comments.mark_read(user.id, case.id, comment.created_at)
+    return jsonify(c.discussion.as_json(comment, me)), 201
+
+
+@bp.patch("/cases/<case_id>/discussion/<message_id>")
+def edit_discussion_message(case_id: str, message_id: str):
+    """PATCH /api/cases/{id}/discussion/{message} — {"message": "..."}.
+    Its author only (403 otherwise); not once deleted (409)."""
+    require_supervisor()
+    c = container()
+    case = _need(c.cases.get(case_id), case_id)
+    me = _discussion_me()
+    try:
+        comment = c.discussion.edit(case.id, message_id, me,
+                                    (request.get_json(silent=True) or {}).get("message"))
+    except NotYourMessage as exc:
+        raise Forbidden(str(exc)) from exc
+    return jsonify(c.discussion.as_json(comment, me))
+
+
+@bp.delete("/cases/<case_id>/discussion/<message_id>")
+def delete_discussion_message(case_id: str, message_id: str):
+    """DELETE /api/cases/{id}/discussion/{message}[?for=everyone|me].
+
+    * ``everyone`` (the default): its author only; the others then see
+      "deleted by ..." in its place.
+    * ``me``: any supervisor, any message (or "deleted" notice): it
+      disappears from their own view only.
+    """
+    require_supervisor()
+    c = container()
+    case = _need(c.cases.get(case_id), case_id)
+    scope = (request.args.get("for") or "everyone").strip().lower()
+    if scope not in ("everyone", "me"):
+        raise ValueError("for must be everyone or me")
+    if scope == "me":
+        c.discussion.delete_for_me(case.id, message_id, _discussion_viewer())
+        return "", 204
+    try:
+        c.discussion.delete(case.id, message_id, _discussion_me())
+    except NotYourMessage as exc:
+        raise Forbidden(str(exc)) from exc
+    return "", 204
+
+
+@bp.post("/cases/<case_id>/discussion/typing")
+def typing_in_discussion(case_id: str):
+    """POST /api/cases/{id}/discussion/typing — "I am writing": the others
+    see it for a few seconds. Sent by the screen while the person types."""
+    require_supervisor()
+    c = container()
+    case = _need(c.cases.get(case_id), case_id)
+    c.discussion.is_typing(case.id, _discussion_me())
+    return "", 204
+
+
 @bp.get("/cases/<case_id>/history")
 def case_history(case_id: str):
     """GET /api/cases/{id}/history — who submitted, who asked for what
@@ -748,6 +879,35 @@ def _require_validator(c, case: E.AnalysisCase, action: str) -> None:
         raise Forbidden(f"this result was validated by {validator} — only they can {action}")
 
 
+def _require_analysis_actor(c, case: E.AnalysisCase) -> None:
+    """Running the analysis of a validated case: the supervisor who
+    validated it, or the analyst who owns it. Nobody else."""
+    if not auth_required():
+        return
+    user = current_user()
+    if user.is_supervisor:
+        _require_validator(c, case, "run its analysis")
+    elif user.is_analyst:
+        require_case_owner(case)
+    else:
+        raise Forbidden("only the case's analyst or the supervisor who validated it can run its analysis")
+
+
+def _may_comment(case: E.AnalysisCase) -> bool:
+    """Whether the signed-in user may draft the AI commentary again and
+    approve it: the analyst who owns the case, nobody else (BR-13)."""
+    if not auth_required():
+        return True
+    user = current_user()
+    if user is None or not user.is_analyst:
+        return False
+    try:
+        require_case_owner(case)
+    except Forbidden:
+        return False
+    return True
+
+
 def _chosen_supervisor(c, name) -> str | None:
     """The supervisor named on a submission, checked against the users.
 
@@ -794,7 +954,9 @@ def notifications():
     Derived from the cases' state and the audit log, so nothing needs to be
     marked as read: a notification disappears when its case moves on.
 
-    * Supervisor: every SUBMITTED case ("needs validation").
+    * Supervisor: every SUBMITTED case ("needs validation"), and every case
+      whose discussion has messages from someone else they have not read
+      yet ("DISCUSSION").
     * Analyst: each of their cases sent back with a correction request
       and not submitted again yet.
     """
@@ -846,8 +1008,54 @@ def notifications():
                         "extraction_id": _latest_run_id(c, case),
                     }
                 )
+    if user is not None and user.is_supervisor:
+        items.extend(_unread_discussions(c, user))
     items.sort(key=lambda item: item["at"], reverse=True)
     return jsonify(items)
+
+
+def _unread_discussions(c, user: E.User) -> list[dict]:
+    """The cases whose discussion has messages from others since this
+    supervisor last opened it."""
+    me = " ".join(user.full_name.split()).casefold()
+    by_case: dict[str, list[E.CaseComment]] = {}
+    for comment in c.comments.list():
+        if not comment.deleted:  # a deleted message is no longer news
+            by_case.setdefault(comment.case_id, []).append(comment)
+    for case_id in list(by_case):  # nor one this supervisor deleted for themselves
+        hidden = c.comments.hidden(user.id, case_id)
+        by_case[case_id] = [m for m in by_case[case_id] if m.id not in hidden]
+    items = []
+    for case_id, messages in by_case.items():
+        read_at = c.comments.read_at(user.id, case_id)
+        unread = [
+            m for m in messages
+            if " ".join(m.author.split()).casefold() != me
+            and (read_at is None or _naive(m.created_at) > _naive(read_at))
+        ]
+        case = c.cases.get(case_id)
+        if not unread or case is None:
+            continue
+        last = unread[-1]
+        items.append({
+            "kind": "DISCUSSION",
+            "case_id": case.id,
+            "client": case.client,
+            "fiscal_year": case.fiscal_year,
+            "analyst": case.analyst,
+            "author": last.author,
+            "at": last.created_at.isoformat(),
+            "message": last.message[:140],
+            "count": len(unread),
+            "extraction_id": _latest_run_id(c, case),
+        })
+    return items
+
+
+def _naive(moment):
+    """SQLite gives back naive datetimes, the domain makes aware ones:
+    compare them on the same footing (both are UTC)."""
+    return moment.replace(tzinfo=None) if moment is not None and moment.tzinfo else moment
 
 
 # ==========================================================================
@@ -868,6 +1076,7 @@ def analyse(dataset_id: str):
     dataset = _need(c.datasets.get(dataset_id), dataset_id)
     run = _need(c.extractions.get(dataset.extraction_id), dataset.extraction_id)
     case = _need(c.cases.get(run.case_id), run.case_id)
+    _require_analysis_actor(c, case)
 
     results, interpretations = c.analysis.analyse(case, dataset)
     c.cases.save(case)
@@ -1046,6 +1255,7 @@ def case_dashboard(case_id: str):
             "checks": [],
             "year_comparison": None,
             "ai_analysis": None,
+            "can_comment": _may_comment(case),
         })
 
     # Compute current-year ratios from the validated dataset.
@@ -1070,6 +1280,7 @@ def case_dashboard(case_id: str):
         ],
         "year_comparison": _year_comparison(c, case, current_dataset, current_ratios),
         "ai_analysis": ai_analysis_json(c.insight.latest(current_dataset.id)),
+        "can_comment": _may_comment(case),
     })
 
 
@@ -1083,6 +1294,8 @@ def regenerate_ai_analysis(case_id: str):
     """
     c = container()
     case = _need(c.cases.get(case_id), case_id)
+    require_analyst("draft the AI commentary")
+    require_case_owner(case)
     payload = request.get_json(silent=True) or {}
     _run, dataset = _latest_validated_dataset(c, case)
     dataset = _need(dataset, f"validated dataset for case {case_id}")
@@ -1108,6 +1321,8 @@ def approve_ai_analysis(analysis_id: str):
     """
     c = container()
     analysis = _need(c.ai_analyses.get(analysis_id), analysis_id)
+    require_analyst("approve the AI commentary")
+    require_case_owner(_need(c.cases.get(analysis.case_id), analysis.case_id))
     payload = request.get_json(silent=True) or {}
     c.insight.approve(
         analysis,
@@ -1193,12 +1408,30 @@ def my_cases():
 
         entry = _my_case_entry(c, case, dataset)
         entry["my_queue"] = queue
+        if supervisor_view and auth_required():
+            entry["discussion"] = _discussion_counts(c, case, current_user())
         entry["assigned_supervisor"] = (
             _assigned_supervisor(c, case) if case.status == E.SUBMITTED else None
         )
         result.append(entry)
 
     return jsonify(result)
+
+
+def _discussion_counts(c, case: E.AnalysisCase, user: E.User) -> dict:
+    """My cases: how many messages the case's discussion has, and how many
+    from others this supervisor has not read yet."""
+    hidden = c.comments.hidden(user.id, case.id)
+    messages = [m for m in c.comments.list_for_case(case.id)
+                if not m.deleted and m.id not in hidden]
+    read_at = c.comments.read_at(user.id, case.id)
+    me = " ".join(user.full_name.split()).casefold()
+    unread = [
+        m for m in messages
+        if " ".join(m.author.split()).casefold() != me
+        and (read_at is None or _naive(m.created_at) > _naive(read_at))
+    ]
+    return {"messages": len(messages), "unread": len(unread)}
 
 
 def _my_case_entry(c, case: E.AnalysisCase, dataset) -> dict:
@@ -1232,61 +1465,75 @@ def _my_case_entry(c, case: E.AnalysisCase, dataset) -> dict:
 
     return entry
 
-
 @bp.get("/cases/<case_id>/export")
 def export_case(case_id: str):
-    """GET /api/cases/{id}/export -- FR-19 spreadsheet export. """
+    """GET /api/cases/{id}/export?format=xlsx|pdf&lang=en|fr -- FR-19.
+
+    ``xlsx`` (the default): the workbook. ``pdf``: a report to hand over.
+    Both carry the same content (infra/export/report_content.py): a summary
+    of what the analysis says, the ratios, the checks, the validated
+    amounts and the AI commentary only once approved — in the language of
+    the screen (``lang``; English when absent or unknown).
+    """
 
     c = container()
     case = _need(c.cases.get(case_id), case_id)
+    file_format = (request.args.get("format") or "xlsx").strip().lower()
+    if file_format not in ("xlsx", "pdf"):
+        raise ValueError("format must be xlsx or pdf")
+    language = (request.args.get("lang") or "en").strip().lower()[:2]
 
     # Same recency rule as case_dashboard(): export the case's current
     # (most recently validated) dataset, not an arbitrary one that happens
     # to surface first when a document has more than one extraction run.
-    _run, dataset = _latest_validated_dataset(c, case)
+    run, dataset = _latest_validated_dataset(c, case)
     dataset = _need(dataset, f"validated dataset for case {case_id}")
 
     results, interpretations = c.analysis.analyse(case, dataset)
     by_code = {i.ratio_code: i for i in interpretations}
+    ratios = [ratio_json(result, by_code.get(result.code)) for result in results]
+    checks = [check_json(outcome) for outcome in run_all(dataset.statement())]
 
-    ratios = [
-        ratio_json(result, by_code.get(result.code))
-        for result in results
-    ]
-
-    checks = [
-        check_json(outcome)
-        for outcome in run_all(dataset.statement())
-    ]
-
-    output = export_analysis(
+    content = dict(
         case=case_json(case),
-        dataset={
-            **dataset_json(dataset),
-            "amounts": dataset.amounts,
-        },
+        dataset={**dataset_json(dataset), "amounts": dataset.amounts,
+                 "prior_year_amounts": dataset.prior_year_amounts},
         ratios=ratios,
         checks=checks,
+        year_comparison=_year_comparison(c, case, dataset, ratios),
+        ai_analysis=ai_analysis_json(c.insight.latest(dataset.id)),
+        labels=label_of,
+        language=language,
+        reliability=_reliability(c, run, dataset),
     )
-
+    name = f"{case.client}_{case.fiscal_year}_analysis"
+    if file_format == "pdf":
+        return send_file(export_analysis_pdf(**content), as_attachment=True,
+                         download_name=f"{name}.pdf", mimetype="application/pdf")
     return send_file(
-        output,
-        as_attachment=True,
-        download_name=(
-            f"{case.client}_{case.fiscal_year}_analysis.xlsx"
-        ),
-        mimetype=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        ),
+        export_analysis(**content), as_attachment=True, download_name=f"{name}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    return jsonify(
-        {
-            "error": "not_found",
-            "detail": "No validated dataset found for this case",
-        }
-    ), 404
+
+def _reliability(c, run, dataset) -> dict:
+    """What the report says the figures can be relied on for: the engine
+    that read the statement, how many items the analyst corrected or keyed,
+    and the failing checks the supervisor validated over."""
+    fields = list(run.fields) if run is not None else []
+    validation = next(
+        (e for e in c.audit.list_for("ValidatedDataset", dataset.id) if e.action == "VALIDATED"),
+        None,
+    )
+    acknowledged = [item.get("code") for item in
+                    ((validation.detail or {}).get("failed_checks_acknowledged") or [])] \
+        if validation else []
+    return {
+        "engine": run.engine if run is not None else None,
+        "corrected": sum(1 for f in fields if not f.is_keyed and f.corrected_by),
+        "keyed": sum(1 for f in fields if f.is_keyed),
+        "acknowledged": acknowledged,
+    }
 
 # ==========================================================================
 # Evaluation — Part D (week 7). Every campaign is stored (exercise 20).

@@ -13,6 +13,7 @@ import AdminOverviewPage from './pages/AdminOverviewPage.jsx'
 import AdminAuditPage from './pages/AdminAuditPage.jsx'
 import AdminCampaignsPage from './pages/AdminCampaignsPage.jsx'
 import AdminDataPage from './pages/AdminDataPage.jsx'
+import AdminArchivePage from './pages/AdminArchivePage.jsx'
 import NotificationBell from './components/NotificationBell.jsx'
 import BrandMark, { BrandSymbol } from './components/BrandMark.jsx'
 import BusyOverlay from './components/BusyOverlay.jsx'
@@ -75,13 +76,15 @@ export default function App() {
   }
 
   const supervisor = user.role === 'SUPERVISOR'
-  const admin = user.role === 'ADMIN'
+  // The super administrator has the administrator's area too.
+  const admin = user.role === 'ADMIN' || user.role === 'SUPERADMIN'
 
   return (
     <>
-      {/* The administrator has five menus: their header folds into the
-          menu button earlier than the others (wide-nav, app.css). */}
-      <header className={`app-header${menuOpen ? ' open' : ''}${admin ? ' wide-nav' : ''}`}>
+      {/* The administrator (six menus) and the supervisor (four menus and
+          the bell): their header folds into the menu button earlier than
+          the analyst's (wide-nav, app.css). */}
+      <header className={`app-header${menuOpen ? ' open' : ''}${admin || supervisor ? ' wide-nav' : ''}`}>
         <div className="app-header-inner">
           <Link to="/" className="brand-link" aria-label="EB-PARTNERS AUDIT">
             <BrandMark />
@@ -109,6 +112,7 @@ export default function App() {
                 <NavLink to="/admin/audit">{t('nav.adminAudit')}</NavLink>
                 <NavLink to="/admin/campaigns">{t('nav.adminCampaigns')}</NavLink>
                 <NavLink to="/admin/data">{t('nav.adminData')}</NavLink>
+                <NavLink to="/admin/archive">{t('nav.adminArchive')}</NavLink>
               </>
             ) : (
               <>
@@ -145,6 +149,7 @@ export default function App() {
             <Route path="/admin/audit" element={<AdminAuditPage />} />
             <Route path="/admin/campaigns" element={<AdminCampaignsPage />} />
             <Route path="/admin/data" element={<AdminDataPage />} />
+            <Route path="/admin/archive" element={<AdminArchivePage />} />
             <Route path="/users" element={<UsersPage currentUser={user} />} />
             <Route path="/account" element={<AccountPage user={user} onUpdated={signedIn} />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />

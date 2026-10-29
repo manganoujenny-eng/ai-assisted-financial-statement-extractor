@@ -179,7 +179,8 @@ export function getCurrentUser() {
 }
 
 export const isSupervisor = () => currentUser?.role === 'SUPERVISOR'
-export const isAdmin = () => currentUser?.role === 'ADMIN'
+export const isAdmin = () => ['ADMIN', 'SUPERADMIN'].includes(currentUser?.role)
+export const isSuperAdmin = () => currentUser?.role === 'SUPERADMIN'
 
 // Kept for the pages that already call it: the signed-in person's name.
 export function getAnalystName() {
@@ -317,9 +318,13 @@ export async function getExcelPreview(documentId) {
 // the backend's ExtractionRun docstring). Calling it again later — after a
 // document was deleted and a corrected one attached, say — starts a
 // brand-new run over whatever the case's documents are at that moment.
-export const runExtraction = (caseId) =>
+// engine "vision": "Read with AI" — the model reads the PDF page images.
+export const runExtraction = (caseId, engine) =>
   longTask('extraction', (signal) =>
-    request(`/cases/${caseId}/extractions`, { method: 'POST', signal })
+    request(`/cases/${caseId}/extractions`, {
+      ...(engine ? json('POST', { engine }) : { method: 'POST' }),
+      signal,
+    })
   )
 export const getExtractionFields = (extractionId) =>
   request(`/extractions/${extractionId}/fields`)
@@ -430,9 +435,30 @@ export const runPackageSensitivity = (packageName, note) =>
 export const deleteCorpusPackage = (packageName) =>
   request(`/admin/corpus/${encodeURIComponent(packageName)}`, { method: 'DELETE' })
 
-// Delete one stored campaign (administrator only; kept in the audit log).
+// Delete one stored campaign (administrator only; kept in the archive).
 export const deleteCampaign = (id) =>
   request(`/admin/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+// The supervisors' discussion of a case (supervisors only).
+export const getDiscussion = (caseId) => request(`/cases/${caseId}/discussion`)
+export const postDiscussion = (caseId, message) =>
+  request(`/cases/${caseId}/discussion`, json('POST', { message }))
+export const editDiscussionMessage = (caseId, messageId, message) =>
+  request(`/cases/${caseId}/discussion/${messageId}`, json('PATCH', { message }))
+// scope "everyone" (the author: the others see "deleted by ...") or "me"
+// (any message, hidden from my own view only).
+export const deleteDiscussionMessage = (caseId, messageId, scope = 'everyone') =>
+  request(`/cases/${caseId}/discussion/${messageId}?for=${scope}`, { method: 'DELETE' })
+// "I am writing": the others see it for a few seconds.
+export const discussionTyping = (caseId) =>
+  request(`/cases/${caseId}/discussion/typing`, { method: 'POST' })
+
+// The archive: everything deleted, kept for the administrator.
+export const getArchive = (filters) => request(`/admin/archive?${queryString(filters)}`)
+export const restoreArchived = (id) =>
+  request(`/admin/archive/${encodeURIComponent(id)}/restore`, { method: 'POST' })
+export const purgeArchived = (id) =>
+  request(`/admin/archive/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
 // Stored campaigns (exercise 20) — newest first; kind CORPUS or SENSITIVITY.
 export const listCampaigns = (kind) =>

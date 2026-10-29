@@ -330,3 +330,60 @@ class EvaluationPackageRow(Base):
     campaign: Mapped[EvaluationCampaignRow] = relationship(back_populates="packages")
 
 
+class ArchiveEntryRow(Base):
+    """Something someone deleted, kept until restored or deleted for good.
+
+    ``payload`` is the complete copy needed to restore it (the case with its
+    documents, runs, fields, datasets and AI commentary; an account with its
+    password hash; a campaign...). It never leaves the backend: the API and
+    the data browser show ``label`` and ``detail`` only.
+    """
+
+    __tablename__ = "archive_entry"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[dict | None] = mapped_column(JSON)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    deleted_by: Mapped[str | None] = mapped_column(String(100))
+    deleted_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class CaseCommentRow(Base):
+    """One message of the supervisors' discussion of a case."""
+
+    __tablename__ = "case_comment"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    author: Mapped[str] = mapped_column(String(100), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    # Added on 29 Oct: create_schema() adds them to a table created before.
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class DiscussionHiddenRow(Base):
+    """"Delete for me": a message one supervisor no longer sees. The
+    message itself is untouched for everyone else."""
+
+    __tablename__ = "case_discussion_hidden"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+
+
+class DiscussionReadRow(Base):
+    """When each supervisor last opened each case's discussion — what makes
+    a message from someone else "new" in their notifications."""
+
+    __tablename__ = "case_discussion_read"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+

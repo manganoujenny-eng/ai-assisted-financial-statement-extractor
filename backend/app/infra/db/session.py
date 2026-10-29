@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
@@ -50,3 +50,30 @@ def create_schema(engine) -> None:
     is missing. Worth knowing now; not worth installing this week.
     """
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
+
+
+#: Columns added to a table that may already exist in a database. Each is
+#: nullable, so adding it never touches a row. Keep this list short: the
+#: day it grows, it is time for Alembic.
+ADDED_COLUMNS = [
+    ("case_comment", "edited_at", "TIMESTAMP"),
+    ("case_comment", "deleted_at", "TIMESTAMP"),
+]
+
+
+def _add_missing_columns(engine) -> None:
+    """``create_all`` never alters an existing table: add the columns of
+    ``ADDED_COLUMNS`` that are missing (PostgreSQL and SQLite alike)."""
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    missing = [
+        (table, column, kind) for table, column, kind in ADDED_COLUMNS
+        if table in tables
+        and column not in {c["name"] for c in inspector.get_columns(table)}
+    ]
+    if not missing:
+        return
+    with engine.begin() as connection:
+        for table, column, kind in missing:
+            connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {kind}"))

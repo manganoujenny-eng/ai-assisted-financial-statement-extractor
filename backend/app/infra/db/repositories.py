@@ -23,7 +23,11 @@ from ...domain.value_objects import Amount
 from .models import (
     AiAnalysisRow,
     AnalysisCaseRow,
+    ArchiveEntryRow,
     AuditLogRow,
+    CaseCommentRow,
+    DiscussionHiddenRow,
+    DiscussionReadRow,
     DocumentRow,
     EvaluationCampaignRow,
     EvaluationPackageRow,
@@ -743,3 +747,144 @@ def _campaign_to_entity(row: EvaluationCampaignRow) -> E.EvaluationCampaign:
         inputs=row.inputs or {},
         packages=[p.detail for p in row.packages],
     )
+
+
+# ==========================================================================
+# The archive
+# ==========================================================================
+class SqlArchiveRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, entry: E.ArchiveEntry) -> None:
+        self.session.add(
+            ArchiveEntryRow(
+                id=entry.id,
+                kind=entry.kind,
+                entity_id=entry.entity_id,
+                label=entry.label,
+                detail=entry.detail,
+                payload=entry.payload,
+                deleted_by=entry.deleted_by,
+                deleted_at=entry.deleted_at,
+            )
+        )
+        self.session.commit()
+
+    def get(self, entry_id: str) -> E.ArchiveEntry | None:
+        row = self.session.get(ArchiveEntryRow, entry_id)
+        return _archive_to_entity(row) if row else None
+
+    def list(self, kind: str | None = None) -> list[E.ArchiveEntry]:
+        query = select(ArchiveEntryRow).order_by(ArchiveEntryRow.deleted_at.desc())
+        if kind:
+            query = query.where(ArchiveEntryRow.kind == kind)
+        return [_archive_to_entity(row) for row in self.session.scalars(query).all()]
+
+    def delete(self, entry_id: str) -> None:
+        row = self.session.get(ArchiveEntryRow, entry_id)
+        if row is not None:
+            self.session.delete(row)
+            self.session.commit()
+
+
+def _archive_to_entity(row: ArchiveEntryRow) -> E.ArchiveEntry:
+    return E.ArchiveEntry(
+        id=row.id,
+        kind=row.kind,
+        entity_id=row.entity_id,
+        label=row.label,
+        detail=row.detail or {},
+        payload=row.payload or {},
+        deleted_by=row.deleted_by,
+        deleted_at=row.deleted_at,
+    )
+
+
+# ==========================================================================
+# The supervisors' discussion of a case
+# ==========================================================================
+class SqlCommentRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, comment: E.CaseComment) -> None:
+        self.session.add(CaseCommentRow(id=comment.id, case_id=comment.case_id,
+                                        author=comment.author, message=comment.message,
+                                        created_at=comment.created_at,
+                                        edited_at=comment.edited_at,
+                                        deleted_at=comment.deleted_at))
+        self.session.commit()
+
+    def get(self, comment_id: str) -> E.CaseComment | None:
+        row = self.session.get(CaseCommentRow, comment_id)
+        return _comment_to_entity(row) if row else None
+
+    def save(self, comment: E.CaseComment) -> None:
+        row = self.session.get(CaseCommentRow, comment.id)
+        if row is None:
+            raise KeyError(comment.id)
+        row.message = comment.message
+        row.edited_at = comment.edited_at
+        row.deleted_at = comment.deleted_at
+        self.session.commit()
+
+    def list_for_case(self, case_id: str) -> list[E.CaseComment]:
+        rows = self.session.scalars(
+            select(CaseCommentRow).where(CaseCommentRow.case_id == case_id)
+            .order_by(CaseCommentRow.created_at, CaseCommentRow.id)
+        ).all()
+        return [_comment_to_entity(row) for row in rows]
+
+    def list(self) -> list[E.CaseComment]:
+        rows = self.session.scalars(
+            select(CaseCommentRow).order_by(CaseCommentRow.created_at, CaseCommentRow.id)
+        ).all()
+        return [_comment_to_entity(row) for row in rows]
+
+    def delete_for_case(self, case_id: str) -> None:
+        for row in self.session.scalars(
+            select(CaseCommentRow).where(CaseCommentRow.case_id == case_id)
+        ).all():
+            self.session.delete(row)
+        for row in self.session.scalars(
+            select(DiscussionReadRow).where(DiscussionReadRow.case_id == case_id)
+        ).all():
+            self.session.delete(row)
+        for row in self.session.scalars(
+            select(DiscussionHiddenRow).where(DiscussionHiddenRow.case_id == case_id)
+        ).all():
+            self.session.delete(row)
+        self.session.commit()
+
+    def read_at(self, user_id: str, case_id: str):
+        row = self.session.get(DiscussionReadRow, (user_id, case_id))
+        return row.read_at if row else None
+
+    def mark_read(self, user_id: str, case_id: str, at) -> None:
+        row = self.session.get(DiscussionReadRow, (user_id, case_id))
+        if row is None:
+            self.session.add(DiscussionReadRow(user_id=user_id, case_id=case_id, read_at=at))
+        else:
+            row.read_at = at
+        self.session.commit()
+
+
+    def hide(self, user_id: str, case_id: str, comment_id: str) -> None:
+        if self.session.get(DiscussionHiddenRow, (user_id, comment_id)) is None:
+            self.session.add(DiscussionHiddenRow(user_id=user_id, comment_id=comment_id,
+                                                 case_id=case_id))
+            self.session.commit()
+
+    def hidden(self, user_id: str, case_id: str) -> set[str]:
+        return set(self.session.scalars(
+            select(DiscussionHiddenRow.comment_id).where(
+                DiscussionHiddenRow.user_id == user_id, DiscussionHiddenRow.case_id == case_id)
+        ).all())
+
+
+def _comment_to_entity(row: CaseCommentRow) -> E.CaseComment:
+    return E.CaseComment(id=row.id, case_id=row.case_id, author=row.author,
+                         message=row.message, created_at=row.created_at,
+                         edited_at=row.edited_at, deleted_at=row.deleted_at)
+

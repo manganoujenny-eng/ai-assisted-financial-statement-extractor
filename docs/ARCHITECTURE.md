@@ -35,7 +35,7 @@ backend/
       pdf/                   adapters over document_processing
       llm/                   rule-based structurer, Claude adapters, cache, prompts
       db/                    SQLAlchemy models + repositories, in-memory repositories
-      export/                the Excel export
+      export/                the Excel export and the PDF report
   wsgi.py                  python wsgi.py -> http://127.0.0.1:5000
 frontend/                  React + Vite: pages, components, api/client.js, i18n
 tests/
@@ -105,19 +105,30 @@ and every audit author. A browser cannot claim to be someone else.
 |---|---|---|
 | `require_analyst` | analysts | create, upload, extract, correct, key, submit, reopen |
 | `require_case_owner` | the analyst who owns the case | the same actions, on that case only |
-| `require_supervisor` | supervisors | validate, send back, the cross-analyst overview |
+| `require_supervisor` | supervisors | validate, send back, the cross-analyst overview, the case discussion |
 | assignee / validator checks (`routes.py`) | the supervisor the case was submitted to / who validated it | validate, send back, delete |
-| `require_user_manager` | supervisors and the administrator | the Users page |
-| `require_admin` | the administrator | everything under `/api/admin`, corpus campaigns |
+| `_require_analysis_actor` (`routes.py`) | the case's analyst, or the supervisor who validated it | run the analysis |
+| `require_analyst` + `require_case_owner` | the case's analyst | redraft and approve the AI commentary |
+| `require_user_manager` | supervisors and the administrators | the Users page |
+| `require_admin` | the administrator and the super administrator | everything under `/api/admin` (including the archive), corpus campaigns |
 
-One gap, recorded in `PROJECT-STATE.md` §7: the two AI commentary routes
-(regenerate, approve) check only that someone is signed in, not the role.
+**Only the person a case is assigned to acts on it.** Every other supervisor
+may read the case and write in its discussion, but every action is refused
+(403); the dashboard receives `can_comment` so the screen hides what the
+backend would refuse anyway.
 
 The rules on accounts live in `services/user_service.py`, not in the routes:
-the administrator manages supervisors and analysts, a supervisor manages
-analysts only, nobody manages an administrator from the screens
-(`create_admin.py` does it), roles are fixed once an account exists, the last
-active supervisor is kept, and nobody deactivates themselves.
+the super administrator (exactly one, created by `create_superadmin.py`)
+manages the administrators; an administrator manages supervisors and
+analysts; a supervisor manages analysts only; nobody manages the super
+administrator from the screens; roles are fixed once an account exists, the
+last active supervisor is kept, and nobody deactivates themselves.
+
+**Nothing is deleted outright.** Every service that deletes (cases,
+documents, accounts, campaigns, corpus files) first hands the object to
+`ArchiveService`, which encodes it as JSON in `archive_entry` (and moves a
+corpus file to `ARCHIVE_DIR`). An administrator restores it with the same
+ids, or purges it.
 
 The dossier's separation of duties (§6.2: *the one who corrects is not the
 one who validates*) is therefore enforced twice: by the case lifecycle

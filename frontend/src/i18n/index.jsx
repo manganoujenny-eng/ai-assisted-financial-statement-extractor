@@ -95,12 +95,22 @@ export function LanguageProvider({ children }) {
         value === null || value === undefined || value === '' || Number.isNaN(Number(value))
           ? String(value ?? '')
           : Number(value).toLocaleString(locale, options),
-      formatDateTime: (value) => (value ? new Date(value).toLocaleString(locale) : ''),
-      formatDate: (value) => (value ? new Date(value).toLocaleDateString(locale) : ''),
+      formatDateTime: (value) => (value ? asDate(value).toLocaleString(locale) : ''),
+      formatDate: (value) => (value ? asDate(value).toLocaleDateString(locale) : ''),
     }
   }, [lang, setLang])
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
+}
+
+/* Every time the backend stores is UTC. A time read back from the database
+ * comes without its time zone ("2026-10-27T10:05:02"), and a browser reads
+ * such a string as LOCAL time — in Douala (UTC+1) every time would show one
+ * hour early. So a date-time without a zone is read as UTC; the browser then
+ * shows it in the user's own time zone. */
+const NO_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
+export function asDate(value) {
+  return new Date(typeof value === 'string' && NO_ZONE.test(value) ? `${value}Z` : value)
 }
 
 export function useI18n() {

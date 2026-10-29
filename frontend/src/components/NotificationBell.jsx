@@ -1,6 +1,7 @@
 /* What is waiting for the signed-in user.
  *
- * Supervisor: the cases analysts have submitted for validation.
+ * Supervisor: the cases analysts have submitted for validation, and the
+ * cases whose discussion has new messages from another supervisor.
  * Analyst: their cases a supervisor sent back with a correction request.
  *
  * GET /api/notifications derives these from the cases' state, so there is
@@ -24,10 +25,16 @@ export default function NotificationBell() {
   const navigate = useNavigate()
   const location = useLocation()
   const box = useRef(null)
+  // Several refreshes can overlap (a page change, a "notifications-changed"
+  // event...): only the answer to the latest one is shown, never an older
+  // answer that happens to arrive last.
+  const latest = useRef(0)
 
   async function refresh() {
+    const asked = ++latest.current
     try {
-      setItems(await api.getNotifications())
+      const answer = await api.getNotifications()
+      if (asked === latest.current) setItems(answer)
     } catch {
       // A failed refresh keeps the last list; the next one will retry.
     }
@@ -61,7 +68,9 @@ export default function NotificationBell() {
 
   function go(item) {
     setOpen(false)
-    navigate(item.extraction_id ? `/cases/${item.case_id}/review/${item.extraction_id}` : '/')
+    const where = item.extraction_id ? `/cases/${item.case_id}/review/${item.extraction_id}` : '/'
+    // A discussion message opens the case at its discussion.
+    navigate(item.kind === 'DISCUSSION' && item.extraction_id ? `${where}#discussion` : where)
   }
 
   return (
@@ -70,10 +79,13 @@ export default function NotificationBell() {
         type="button"
         className={`notif-button${items.length > 0 ? ' primary' : ''}`}
         onClick={() => setOpen((value) => !value)}
-        title={t('notifications.title')}
+        title={t('notifications.button', { count: items.length })}
+        aria-label={t('notifications.button', { count: items.length })}
         aria-expanded={open}
       >
-        {t('notifications.button', { count: items.length })}
+        {/* Compact: the bell and the count; the full text is the tooltip. */}
+        <span aria-hidden="true">🔔</span>
+        <span className="num">{items.length}</span>
       </button>
 
       {open && (
@@ -94,6 +106,13 @@ export default function NotificationBell() {
                   {item.kind === 'SUBMITTED'
                     ? t('notifications.submitted', {
                         name: item.author || item.analyst || t('sup.unassigned'),
+                        client: item.client,
+                        year: item.fiscal_year,
+                      })
+                    : item.kind === 'DISCUSSION'
+                    ? t('notifications.discussion', {
+                        count: item.count,
+                        name: item.author,
                         client: item.client,
                         year: item.fiscal_year,
                       })
