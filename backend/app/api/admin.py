@@ -45,6 +45,7 @@ from werkzeug.utils import secure_filename
 from ..domain import entities as E
 from ..domain.ports import AuditQuery
 from .auth import actor, require_admin
+from .routes import _latest_validated_dataset
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -71,6 +72,15 @@ def overview():
     documents = [d for case in cases for d in case.documents]
     runs = [run for case in cases for run in c.extractions.list_for_case(case.id)]
     analyses = [a for case in cases for a in c.ai_analyses.list_for_case(case.id)]
+    # Only the latest commentary of each case's current result can still
+    # be approved; an older draft (drafted again, or the case re-validated)
+    # stays in the history but waits for nobody.
+    current = {}
+    for case in cases:
+        _run, dataset = _latest_validated_dataset(c, case)
+        latest = c.insight.latest(dataset.id) if dataset is not None else None
+        if latest is not None:
+            current[latest.id] = latest
     campaigns = c.evaluations.list()
     corpus_campaigns = [x for x in campaigns if x.kind == E.CAMPAIGN_CORPUS]
     recent, total_audit = c.audit.search(AuditQuery(limit=8))
@@ -99,6 +109,11 @@ def overview():
             "ai_analyses": {
                 "total": len(analyses),
                 "by_status": dict(Counter(a.status for a in analyses)),
+                "pending": sum(1 for a in current.values() if a.status == E.AI_DRAFT),
+                "replaced": sum(1 for a in analyses
+                                if a.status == E.AI_DRAFT and a.id not in current),
+                # One commentary = one model call; the cost is their total.
+                "calls": len(analyses),
                 "cost_usd": str(sum((a.cost_usd or Decimal(0)) for a in analyses)),
             },
             "campaigns": {

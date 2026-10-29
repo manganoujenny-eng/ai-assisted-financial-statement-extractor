@@ -137,10 +137,21 @@ export default function AdminOverviewPage() {
                 <td className="num">{money(data.extractions.cost_usd)}</td>
               </tr>
               <tr>
-                <td>{t('adm.aiRow')}<span className="faint ov-sub">{t('adm.aiDrafts', { count: ai.DRAFT || 0 })}</span></td>
+                <td>
+                  {t('adm.aiRow')}
+                  <span className="faint ov-sub">
+                    {t('adm.aiDrafts', { count: data.ai_analyses.pending ?? ai.DRAFT ?? 0 })}
+                    {data.ai_analyses.replaced > 0 && ` · ${t('adm.aiReplaced', { count: data.ai_analyses.replaced })}`}
+                  </span>
+                </td>
                 <td className="num">{ai.APPROVED || 0}</td>
                 <td className="num">{ai.FAILED || <span className="faint">0</span>}</td>
-                <td className="num">{money(data.ai_analyses.cost_usd)}</td>
+                <td className="num">
+                  {money(data.ai_analyses.cost_usd)}
+                  {data.ai_analyses.calls > 0 && (
+                    <span className="faint ov-sub">{t('adm.aiCalls', { count: data.ai_analyses.calls })}</span>
+                  )}
+                </td>
               </tr>
             </tbody>
           </table>
